@@ -251,11 +251,22 @@ button, select, input { font: inherit; }
 .radio-queue-row.is-next { border-color: rgba(110, 233, 220, .62); background: rgba(110, 233, 220, .055); box-shadow: inset 2px 0 0 var(--radio-cyan), 0 0 14px rgba(110, 233, 220, .06); }
 .radio-queue-row.is-next.is-building { border-style: dashed; animation: radio-next-pulse 1.5s ease-in-out infinite; }
 .radio-queue-row.is-next.is-empty { border-style: dashed; border-color: rgba(110, 233, 220, .38); box-shadow: inset 2px 0 0 rgba(110, 233, 220, .6); }
-.radio-queue-row > span { color: var(--radio-dim); font-size: .42rem; letter-spacing: .07em; }
+.radio-queue-track-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.radio-queue-track-heading > span { color: var(--radio-dim); font-size: .42rem; letter-spacing: .07em; }
+.radio-queue-track-heading b { color: var(--radio-cyan); font-size: .4rem; font-weight: 500; letter-spacing: .08em; }
 .radio-queue-row.is-current > span { color: var(--radio-lime); }
-.radio-queue-row.is-next > span { color: var(--radio-cyan); }
+.radio-queue-row.is-next .radio-queue-track-heading > span { color: var(--radio-cyan); }
 .radio-queue-row strong { overflow: hidden; color: var(--radio-ink); font: 600 .63rem/1.15 Syne, sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.radio-queue-row.is-next .radio-queue-title { overflow: visible; color: var(--radio-ink); font-size: .74rem; line-height: 1.15; text-overflow: clip; white-space: normal; }
 .radio-queue-row small { color: var(--radio-muted); font-size: .44rem; }
+.radio-next-info-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 8px; margin: 2px 0 0; padding-top: 6px; border-top: 1px solid rgba(110, 233, 220, .16); }
+.radio-next-info-grid div { min-width: 0; display: grid; gap: 2px; }
+.radio-next-info-grid dt { color: rgba(110, 233, 220, .64); font-size: .38rem; letter-spacing: .08em; }
+.radio-next-info-grid dd { min-width: 0; margin: 0; overflow: hidden; color: var(--radio-ink); font-size: .46rem; text-overflow: ellipsis; white-space: nowrap; }
+.radio-next-prompt { display: grid; gap: 3px; margin-top: 2px; padding-top: 6px; border-top: 1px solid rgba(110, 233, 220, .16); }
+.radio-next-prompt > span, .radio-next-id { color: var(--radio-cyan); font-size: .38rem; letter-spacing: .07em; }
+.radio-next-prompt p { margin: 0; overflow-wrap: anywhere; color: var(--radio-ink); font-size: .46rem; line-height: 1.35; }
+.radio-next-id { overflow: hidden; color: var(--radio-dim); text-overflow: ellipsis; white-space: nowrap; }
 .radio-queue-empty { grid-column: 1 / -1; padding: 9px 8px; border: 1px dashed rgba(61, 93, 71, .7); color: var(--radio-dim); font-size: .48rem; line-height: 1.45; }
 @keyframes radio-pulse { 50% { opacity: .42; transform: scale(.72); } }
 @keyframes radio-build { to { opacity: .48; } }
@@ -285,6 +296,7 @@ button, select, input { font: inherit; }
   .radio-control-grid, .radio-dsp-control-grid { grid-template-columns: 1fr; }
   .radio-recipe-footer { grid-template-columns: 1fr; }
   .radio-queue { grid-template-columns: 1fr; }
+  .radio-next-info-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

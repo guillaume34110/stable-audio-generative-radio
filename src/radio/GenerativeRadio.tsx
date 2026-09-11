@@ -132,6 +132,8 @@ const evolutionLabels: readonly { id: RadioEvolution; label: string; hint: strin
   { id: 'wild', label: 'SAUVAGE', hint: 'Ruptures assumées' },
 ]
 
+const evolutionLabel = (value: RadioEvolution): string => evolutionLabels.find((item) => item.id === value)?.label ?? value.toUpperCase()
+
 const formatClock = (seconds: number): string => `${Math.floor(Math.max(0, seconds) / 60)}:${String(Math.floor(Math.max(0, seconds) % 60)).padStart(2, '0')}`
 
 const formatDecibels = (value: number): string => value <= -59 ? '-∞ dB' : `${value > 0 ? '+' : ''}${value.toFixed(1)} dB`
@@ -813,9 +815,33 @@ export const GenerativeRadio = ({
       {currentTrack ? <>
         <div className="radio-queue-row is-current" data-testid="current-radio-track"><span>01 · FLUX ACTIF</span><strong>{currentTrack.title}</strong><small>{currentTrack.key} · {currentTrack.bpm} BPM · morceaux indépendants · même arc procédural</small></div>
         <div className={`radio-queue-row is-next ${continuationGenerating ? 'is-building' : continuationTrack ? 'is-ready' : 'is-empty'}`} data-testid="next-radio-track" aria-label="Prochain morceau">
-          <span>02 · UP NEXT</span>
-          <strong>{continuationTrack ? continuationTrack.title : continuationGenerating ? 'Préparation du prochain morceau…' : 'Prochain morceau en attente'}</strong>
-          <small>{continuationTrack ? `${continuationTrack.key} · ${continuationTrack.bpm} BPM · génération indépendante` : continuationGenerating ? 'Stable Audio 3 · génération anticipée' : 'Il sera préparé avant la fin du morceau actuel'}</small>
+          <div className="radio-queue-track-heading"><span>02 · UP NEXT</span>{continuationTrack ? <b>READY / PRÊT</b> : continuationGenerating ? <b>BUILDING / CALCUL</b> : null}</div>
+          {continuationTrack ? <>
+            <strong className="radio-queue-title">{continuationTrack.title}</strong>
+            <dl className="radio-next-info-grid">
+              <div><dt>KEY</dt><dd>{continuationTrack.key}</dd></div>
+              <div><dt>BPM</dt><dd>{continuationTrack.bpm}</dd></div>
+              <div><dt>DURÉE</dt><dd>{formatClock(continuationTrack.durationSeconds)}</dd></div>
+              <div><dt>MODE</dt><dd>INDÉPENDANT</dd></div>
+              <div><dt>ÉVOLUTION</dt><dd>{evolutionLabel(continuationTrack.recipe.evolution)}</dd></div>
+              <div><dt>DÉRIVE</dt><dd>±{Math.round(continuationTrack.recipe.drift / 4)} BPM</dd></div>
+              <div><dt>ÉNERGIE</dt><dd>{continuationTrack.recipe.energy}%</dd></div>
+              <div><dt>MATIÈRE</dt><dd>{continuationTrack.recipe.texture}%</dd></div>
+              <div><dt>SFT</dt><dd>{continuationTrack.recipe.modelVariant.toUpperCase()} · {Math.round(continuationTrack.recipe.loraStrength * 100)}%</dd></div>
+              <div><dt>SEED</dt><dd>{continuationTrack.recipe.seed}</dd></div>
+            </dl>
+            <div className="radio-next-prompt" aria-label="Prompt de la prochaine génération">
+              <span>PROMPT UTILISÉ · {continuationTrack.recipe.tags.length}/{continuationTrack.recipe.keywordPool.length} TAGS</span>
+              <p>{continuationTrack.recipe.keywords}</p>
+            </div>
+            <small className="radio-next-id">GENERATION ID · {String(continuationTrack.id)}</small>
+          </> : continuationGenerating ? <>
+            <strong className="radio-queue-title">Préparation du prochain morceau…</strong>
+            <small>Stable Audio 3 · génération indépendante · {generationProgress}%</small>
+          </> : <>
+            <strong className="radio-queue-title">Prochain morceau en attente</strong>
+            <small>Il sera préparé avant la fin du morceau actuel</small>
+          </>}
         </div>
       </> : <div className="radio-queue-empty">Aucun flux dans le lecteur · importe ton SFT puis lance la composition.</div>}
     </div>
