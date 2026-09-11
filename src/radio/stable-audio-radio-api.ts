@@ -137,7 +137,9 @@ export const waitForStableAudioRadioGeneration = async (
 }
 
 export const stableAudioRadioAudioBlob = async (generationId: string): Promise<Blob> => {
-  const response = await stableAudioRadioResponse(`/api/stable-audio/radio/generations/${encodeURIComponent(generationId)}/audio`)
+  const response = await stableAudioRadioResponse(`/api/stable-audio/radio/generations/${encodeURIComponent(generationId)}/audio`, {
+    cache: 'no-store',
+  })
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
     throw new Error(detail || `Could not fetch generated audio (${response.status}).`)

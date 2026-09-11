@@ -22,6 +22,23 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
   const [stableAudioRuntimeReady, setStableAudioRuntimeReady] = useState<boolean | null>(null)
   const audioUrlsRef = useRef<Set<string>>(new Set())
 
+  const releaseAudioUrl = (url?: string): void => {
+    if (!url || !audioUrlsRef.current.has(url)) return
+    audioUrlsRef.current.delete(url)
+    URL.revokeObjectURL(url)
+  }
+
+  const retainAudioUrl = (url: string): void => {
+    if (!url.startsWith('blob:')) return
+    audioUrlsRef.current.add(url)
+    if (audioUrlsRef.current.size <= 2) return
+    for (const staleUrl of [...audioUrlsRef.current]) {
+      if (staleUrl === url) continue
+      releaseAudioUrl(staleUrl)
+      if (audioUrlsRef.current.size <= 2) break
+    }
+  }
+
   useEffect(() => {
     let active = true
     void listStableAudioRadioSfts().then((catalog) => {
@@ -35,7 +52,7 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
     })
     return () => {
       active = false
-      for (const url of audioUrlsRef.current) URL.revokeObjectURL(url)
+      for (const url of [...audioUrlsRef.current]) releaseAudioUrl(url)
     }
   }, [])
 
@@ -70,7 +87,7 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
     const completedGenerationId = completed.generation_id ?? completed.id ?? job.generation_id
     const audio = await stableAudioRadioAudioBlob(completedGenerationId)
     const audioUrl = URL.createObjectURL(audio)
-    audioUrlsRef.current.add(audioUrl)
+    retainAudioUrl(audioUrl)
     return {
       audioUrl,
       id: completedGenerationId,
@@ -101,6 +118,7 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
         onClearModel={() => setSelectedModel(null)}
         onGenerate={handleGenerate}
         onImportModel={handleImportModel}
+        onReleaseAudioUrl={releaseAudioUrl}
         onSelectModel={setSelectedModel}
         selectedModel={selectedModel}
       />

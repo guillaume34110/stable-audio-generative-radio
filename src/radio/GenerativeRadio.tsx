@@ -45,6 +45,7 @@ type RadioTrack = {
   title: string
   bpm: number
   key: string
+  mode: 'programme' | 'independent'
   evolution: RadioEvolution
   durationSeconds: number
   audioUrl?: string
@@ -173,7 +174,11 @@ const proceduralValue = (seed: number, channel: number): number => {
 
 const pickGenerationTags = (pool: readonly string[], seed: number): string[] => {
   if (pool.length <= 2) return [...pool]
-  const targetSize = Math.min(pool.length, Math.max(2, Math.ceil(pool.length * 0.55)))
+  const minimum = pool.length <= 6 ? Math.max(2, pool.length - 1) : Math.min(pool.length, 5)
+  const maximum = pool.length <= 8
+    ? Math.max(minimum, pool.length - 1)
+    : Math.min(pool.length - 1, 14)
+  const targetSize = minimum + Math.floor(proceduralValue(seed, 97) * (maximum - minimum + 1))
   return pool
     .map((tag, index) => ({ tag, index, rank: proceduralValue(seed, index + 101) }))
     .sort((left, right) => left.rank - right.rank)
@@ -234,17 +239,82 @@ const titleForKeywords = (keywords: string[], index: number): string => {
   return `${lead.slice(0, 18)} ${suffixes[index % suffixes.length]}`
 }
 
-const trackFromResult = (result: RadioGenerationResult, recipe: RadioRecipe, titleIndex: number): RadioTrack => ({
-  id: result.id ?? Date.now(),
+const trackFromRecipe = (
+  recipe: RadioRecipe,
+  titleIndex: number,
+  mode: RadioTrack['mode'] = 'independent',
+  id: number | string = `pending-${recipe.seed}`,
+): RadioTrack => ({
+  id,
+  title: titleForKeywords(recipe.tags, titleIndex),
+  bpm: recipe.bpm,
+  key: 'F#m',
+  mode,
+  evolution: recipe.evolution,
+  durationSeconds: recipe.durationSeconds,
+  state: 'queued',
+  recipe,
+})
+
+const trackFromResult = (
+  result: RadioGenerationResult,
+  recipe: RadioRecipe,
+  titleIndex: number,
+  mode: RadioTrack['mode'] = 'programme',
+): RadioTrack => ({
+  ...trackFromRecipe(recipe, titleIndex, mode, result.id ?? Date.now()),
   title: result.title ?? titleForKeywords(recipe.tags, titleIndex),
   bpm: result.bpm ?? recipe.bpm,
   key: result.key ?? 'F#m',
-  evolution: recipe.evolution,
   durationSeconds: result.durationSeconds ?? recipe.durationSeconds,
   audioUrl: result.audioUrl,
   state: 'ready',
-  recipe,
 })
+
+const buildContinuationRecipe = (sourceRecipe: RadioRecipe, variation: number): RadioRecipe => buildProceduralRecipe({
+  keywords: sourceRecipe.keywordPool.join(', '),
+  bpm: sourceRecipe.bpm,
+  drift: sourceRecipe.drift,
+  energy: sourceRecipe.energy,
+  texture: sourceRecipe.texture,
+  evolution: sourceRecipe.evolution,
+  durationSeconds: sourceRecipe.durationSeconds,
+  loraStrength: sourceRecipe.loraStrength,
+  modelVariant: sourceRecipe.modelVariant,
+}, variation, true)
+
+type RadioTrackCardProps = {
+  track: RadioTrack
+  slot: 'current' | 'next'
+  statusLabel: string
+  building?: boolean
+}
+
+const RadioTrackCard = ({ track, slot, statusLabel, building = false }: RadioTrackCardProps): ReactElement => {
+  const isCurrent = slot === 'current'
+  const trackClassName = `radio-queue-row is-${slot}${building ? ' is-building' : ''}`
+  return <div className={trackClassName} data-testid={isCurrent ? 'current-radio-track' : 'next-radio-track'} aria-label={isCurrent ? 'Morceau actif' : 'Prochain morceau'}>
+    <div className="radio-queue-track-heading"><span>{isCurrent ? '01 · FLUX ACTIF' : '02 · UP NEXT'}</span><b>{statusLabel}</b></div>
+    <strong className="radio-queue-title">{track.title}</strong>
+    <dl className="radio-track-info-grid">
+      <div><dt>KEY</dt><dd>{track.key}</dd></div>
+      <div><dt>BPM</dt><dd>{track.bpm}</dd></div>
+      <div><dt>DURÉE</dt><dd>{formatClock(track.durationSeconds)}</dd></div>
+      <div><dt>MODE</dt><dd>{track.mode === 'independent' ? 'INDÉPENDANT' : 'PROGRAMME'}</dd></div>
+      <div><dt>ÉVOLUTION</dt><dd>{evolutionLabel(track.recipe.evolution)}</dd></div>
+      <div><dt>DÉRIVE</dt><dd>±{Math.round(track.recipe.drift / 4)} BPM</dd></div>
+      <div><dt>ÉNERGIE</dt><dd>{track.recipe.energy}%</dd></div>
+      <div><dt>MATIÈRE</dt><dd>{track.recipe.texture}%</dd></div>
+      <div><dt>SFT</dt><dd>{track.recipe.modelVariant.toUpperCase()} · {Math.round(track.recipe.loraStrength * 100)}%</dd></div>
+      <div><dt>SEED</dt><dd>{track.recipe.seed}</dd></div>
+    </dl>
+    <div className="radio-track-prompt" aria-label={isCurrent ? 'Prompt du morceau actif' : 'Prompt de la prochaine génération'}>
+      <span>PROMPT UTILISÉ · {track.recipe.tags.length}/{track.recipe.keywordPool.length} TAGS</span>
+      <p>{track.recipe.keywords}</p>
+    </div>
+    <small className="radio-track-id">GENERATION ID · {track.state === 'queued' ? 'EN PRÉPARATION' : String(track.id)}</small>
+  </div>
+}
 
 const percentStyle = (value: number): CSSProperties => ({ '--radio-fill': `${value}%` } as CSSProperties)
 
@@ -256,6 +326,7 @@ type GenerativeRadioProps = {
   onClearModel?: () => void
   onGenerate?: (request: RadioGenerationRequest, onProgress?: (progress: number) => void) => Promise<RadioGenerationResult | void>
   onImportModel?: (file: File) => Promise<StableAudioRadioAdapter | void>
+  onReleaseAudioUrl?: (audioUrl?: string) => void
   onSelectModel?: (model: StableAudioRadioAdapter) => void
   selectedModel?: StableAudioRadioAdapter | null
 }
@@ -266,6 +337,7 @@ export const GenerativeRadio = ({
   onClearModel,
   onGenerate,
   onImportModel,
+  onReleaseAudioUrl,
   onSelectModel,
   selectedModel,
 }: GenerativeRadioProps): ReactElement => {
@@ -293,6 +365,7 @@ export const GenerativeRadio = ({
   const [position, setPosition] = useState(0)
   const [currentTrack, setCurrentTrack] = useState<RadioTrack | null>(null)
   const [continuationTrack, setContinuationTrack] = useState<RadioTrack | null>(null)
+  const [continuationPreview, setContinuationPreview] = useState<RadioTrack | null>(null)
   const [generationProgress, setGenerationProgress] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [continuationGenerating, setContinuationGenerating] = useState(false)
@@ -300,7 +373,6 @@ export const GenerativeRadio = ({
   const [error, setError] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const dspRef = useRef<RadioDspController | null>(null)
-  const audioUrlsRef = useRef<Set<string>>(new Set())
   const playbackPositionRef = useRef(position)
   const keywordsRef = useRef<HTMLTextAreaElement | null>(null)
   const generateNextRef = useRef<(autoplay?: boolean) => Promise<void>>(async () => undefined)
@@ -327,10 +399,6 @@ export const GenerativeRadio = ({
     playbackPositionRef.current = position
   }, [position])
 
-  useEffect(() => () => {
-    for (const url of audioUrlsRef.current) URL.revokeObjectURL(url)
-  }, [])
-
   const keywordTokens = useMemo(() => parseKeywords(keywords), [keywords])
   const selectedAdapter = selectedModel ?? localModel
   const modelOptions = useMemo(() => {
@@ -352,6 +420,15 @@ export const GenerativeRadio = ({
   const displayedTagPool = activeRecipe?.keywordPool ?? keywordTokens
   const tagCountLabel = activeRecipe ? `${displayedTags.length}/${displayedTagPool.length} TAGS` : `${displayedTagPool.length} TAGS`
   const displayedEvolution = currentTrack?.evolution ?? activeRecipe?.evolution ?? evolution
+  const activeQueueTrack = currentTrack ?? (generating && activeRecipe
+    ? trackFromRecipe(activeRecipe, variationCounterRef.current, 'programme')
+    : null)
+  const projectedSourceTrack = currentTrack ?? activeQueueTrack
+  const projectedVariation = currentTrack ? variationCounterRef.current : variationCounterRef.current + 1
+  const projectedContinuationTrack = projectedSourceTrack
+    ? trackFromRecipe(buildContinuationRecipe(projectedSourceTrack.recipe, projectedVariation), projectedVariation, 'independent')
+    : null
+  const nextQueueTrack = continuationTrack ?? continuationPreview ?? projectedContinuationTrack
   const radioDspSettings = useMemo<RadioDspSettings>(() => ({
     preampDb,
     dspEnabled,
@@ -383,6 +460,7 @@ export const GenerativeRadio = ({
     playbackEndedRef.current = false
     audio.pause()
     audio.currentTime = 0
+    audio.load()
     setPosition(0)
     if (playing) {
       void audio.play().catch(() => {
@@ -471,6 +549,10 @@ export const GenerativeRadio = ({
     }
   }
 
+  const releaseTrackAudio = (track: RadioTrack | null | undefined): void => {
+    if (track?.audioUrl) onReleaseAudioUrl?.(track.audioUrl)
+  }
+
   const handleStart = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     if (!keywords.trim()) {
@@ -524,17 +606,9 @@ export const GenerativeRadio = ({
     setContinuationGenerating(true)
     setGenerationProgress(4)
     const variation = variationCounterRef.current
-    const recipe = buildProceduralRecipe({
-      keywords: sourceRecipe.keywordPool.join(', '),
-      bpm: sourceRecipe.bpm,
-      drift: sourceRecipe.drift,
-      energy: sourceRecipe.energy,
-      texture: sourceRecipe.texture,
-      evolution: sourceRecipe.evolution,
-      durationSeconds: sourceRecipe.durationSeconds,
-      loraStrength: sourceRecipe.loraStrength,
-      modelVariant: sourceRecipe.modelVariant,
-    }, variation, true)
+    const recipe = buildContinuationRecipe(sourceRecipe, variation)
+    const previewTrack = trackFromRecipe(recipe, variation, 'independent')
+    setContinuationPreview(previewTrack)
     const request: RadioGenerationRequest = {
       keywords: recipe.keywords,
       bpm: recipe.bpm,
@@ -557,10 +631,14 @@ export const GenerativeRadio = ({
         if (session === programSessionRef.current) setGenerationProgress(clamp(nextProgress, 0, 100))
       })
       if (!result?.audioUrl) throw new Error('Le moteur n’a pas renvoyé le morceau indépendant.')
-      if (session !== programSessionRef.current) return
-      if (result.audioUrl.startsWith('blob:')) audioUrlsRef.current.add(result.audioUrl)
-      completedTrack = trackFromResult(result, recipe, variation)
+      if (session !== programSessionRef.current) {
+        onReleaseAudioUrl?.(result.audioUrl)
+        return
+      }
+      completedTrack = trackFromResult(result, recipe, variation, 'independent')
+      releaseTrackAudio(continuationTrackRef.current)
       continuationTrackRef.current = completedTrack
+      setContinuationPreview(null)
       setContinuationTrack(completedTrack)
       variationCounterRef.current = variation + 1
       setGenerationProgress(100)
@@ -571,6 +649,7 @@ export const GenerativeRadio = ({
       continuationGeneratingRef.current = false
       if (session !== programSessionRef.current) return
       setContinuationGenerating(false)
+      if (!completedTrack) setContinuationPreview(previewTrack)
       if (completedTrack && playbackEndedRef.current && continuationTrackRef.current?.id === completedTrack.id) activateContinuation(completedTrack)
     }
   }
@@ -578,8 +657,10 @@ export const GenerativeRadio = ({
   function activateContinuation(track: RadioTrack): void {
     if (!track.audioUrl) return
     playbackEndedRef.current = false
+    if (currentTrack?.id !== track.id) releaseTrackAudio(currentTrack)
     continuationTrackRef.current = null
     setContinuationTrack(null)
+    setContinuationPreview(null)
     setCurrentTrack(track)
     setPosition(0)
     setPlaying(true)
@@ -617,8 +698,10 @@ export const GenerativeRadio = ({
     const session = programSessionRef.current + 1
     programSessionRef.current = session
     playbackEndedRef.current = false
+    releaseTrackAudio(continuationTrackRef.current)
     continuationTrackRef.current = null
     setContinuationTrack(null)
+    setContinuationPreview(null)
     setContinuationGenerating(false)
     setGenerating(true)
     setGenerationProgress(12)
@@ -654,10 +737,13 @@ export const GenerativeRadio = ({
     try {
       const result = await onGenerate(request, (nextProgress) => setGenerationProgress(clamp(nextProgress, 0, 100)))
       if (!result?.audioUrl) throw new Error('Le moteur n’a pas renvoyé de fichier audio.')
-      if (result.audioUrl.startsWith('blob:')) audioUrlsRef.current.add(result.audioUrl)
       variationCounterRef.current = variation + 1
       const nextTrack = trackFromResult(result, recipe, variation)
+      const previousTrack = currentTrack
       setCurrentTrack(nextTrack)
+      if (previousTrack?.id !== nextTrack.id) {
+        window.setTimeout(() => releaseTrackAudio(previousTrack), 0)
+      }
       if (autoplay || autoplayAfterGenerationRef.current || playing) setPlaying(true)
       autoplayAfterGenerationRef.current = false
       setGenerationProgress(100)
@@ -742,7 +828,7 @@ export const GenerativeRadio = ({
             <div className="radio-timeline-meta"><span>{formatClock(position)}</span><span>{formatClock(currentTrackDuration)}</span></div>
           </div>
         </div>
-        <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="auto" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); void dspRef.current?.resume() }} onPause={() => setPlaying(false)} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={() => { if (audioRef.current?.duration && Number.isFinite(audioRef.current.duration)) setPosition(Math.min(audioRef.current.currentTime, audioRef.current.duration)) }} onEnded={handleAudioEnded} />
+        <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="auto" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); void dspRef.current?.resume() }} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError('Le WAV généré ne peut pas être décodé par le navigateur.'); setStatus('Lecture impossible · le moteur prépare un WAV compatible navigateur.') }} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={() => { if (audioRef.current?.duration && Number.isFinite(audioRef.current.duration)) setPosition(Math.min(audioRef.current.currentTime, audioRef.current.duration)) }} onEnded={handleAudioEnded} />
 
         <div className="radio-buffer" aria-label="État du programme">
           <div className="radio-buffer-heading"><span>PROGRAMME AUDIO</span><b>{generating || continuationGenerating ? `${generationProgress}%` : bufferAdvance}</b></div>
@@ -762,7 +848,7 @@ export const GenerativeRadio = ({
             <span><strong>Évolution procédurale</strong><small>Seuls les tags saisis sont utilisés comme matière; tempo, énergie et couches dérivent lentement</small></span>
             <b>ON</b>
           </div>
-          <p>{activeRecipe ? `Flux actif · ${activeRecipe.tags.length} tags tirés au hasard depuis un pool de ${activeRecipe.keywordPool.length} tags utilisateur · ${activeRecipe.bpm} BPM · énergie ${activeRecipe.energy}% · matière ${activeRecipe.texture}%` : `Tags utilisateur uniquement · chaque génération tire au hasard dans le pool · tempo, énergie et matière évoluent sur 6 min`}</p>
+          <p>{activeRecipe ? `Flux actif · ${activeRecipe.tags.length} tags tirés au hasard depuis un pool de ${activeRecipe.keywordPool.length} tags utilisateur · ${activeRecipe.bpm} BPM · énergie ${activeRecipe.energy}% · matière ${activeRecipe.texture}%` : `Tags utilisateur uniquement · nombre de tags variable à chaque génération · tempo, énergie et matière évoluent sur 6 min`}</p>
         </div>
 
         <div className="radio-dsp-panel" data-testid="radio-dsp-panel">
@@ -812,37 +898,9 @@ export const GenerativeRadio = ({
     </div>
 
     <div className="radio-queue" aria-label="Programme de la radio">
-      {currentTrack ? <>
-        <div className="radio-queue-row is-current" data-testid="current-radio-track"><span>01 · FLUX ACTIF</span><strong>{currentTrack.title}</strong><small>{currentTrack.key} · {currentTrack.bpm} BPM · morceaux indépendants · même arc procédural</small></div>
-        <div className={`radio-queue-row is-next ${continuationGenerating ? 'is-building' : continuationTrack ? 'is-ready' : 'is-empty'}`} data-testid="next-radio-track" aria-label="Prochain morceau">
-          <div className="radio-queue-track-heading"><span>02 · UP NEXT</span>{continuationTrack ? <b>READY / PRÊT</b> : continuationGenerating ? <b>BUILDING / CALCUL</b> : null}</div>
-          {continuationTrack ? <>
-            <strong className="radio-queue-title">{continuationTrack.title}</strong>
-            <dl className="radio-next-info-grid">
-              <div><dt>KEY</dt><dd>{continuationTrack.key}</dd></div>
-              <div><dt>BPM</dt><dd>{continuationTrack.bpm}</dd></div>
-              <div><dt>DURÉE</dt><dd>{formatClock(continuationTrack.durationSeconds)}</dd></div>
-              <div><dt>MODE</dt><dd>INDÉPENDANT</dd></div>
-              <div><dt>ÉVOLUTION</dt><dd>{evolutionLabel(continuationTrack.recipe.evolution)}</dd></div>
-              <div><dt>DÉRIVE</dt><dd>±{Math.round(continuationTrack.recipe.drift / 4)} BPM</dd></div>
-              <div><dt>ÉNERGIE</dt><dd>{continuationTrack.recipe.energy}%</dd></div>
-              <div><dt>MATIÈRE</dt><dd>{continuationTrack.recipe.texture}%</dd></div>
-              <div><dt>SFT</dt><dd>{continuationTrack.recipe.modelVariant.toUpperCase()} · {Math.round(continuationTrack.recipe.loraStrength * 100)}%</dd></div>
-              <div><dt>SEED</dt><dd>{continuationTrack.recipe.seed}</dd></div>
-            </dl>
-            <div className="radio-next-prompt" aria-label="Prompt de la prochaine génération">
-              <span>PROMPT UTILISÉ · {continuationTrack.recipe.tags.length}/{continuationTrack.recipe.keywordPool.length} TAGS</span>
-              <p>{continuationTrack.recipe.keywords}</p>
-            </div>
-            <small className="radio-next-id">GENERATION ID · {String(continuationTrack.id)}</small>
-          </> : continuationGenerating ? <>
-            <strong className="radio-queue-title">Préparation du prochain morceau…</strong>
-            <small>Stable Audio 3 · génération indépendante · {generationProgress}%</small>
-          </> : <>
-            <strong className="radio-queue-title">Prochain morceau en attente</strong>
-            <small>Il sera préparé avant la fin du morceau actuel</small>
-          </>}
-        </div>
+      {activeQueueTrack ? <>
+        <RadioTrackCard track={activeQueueTrack} slot="current" statusLabel={currentTrack ? (playing ? 'PLAYING / ACTIF' : 'PAUSED / PAUSE') : 'BUILDING / CALCUL'} building={!currentTrack} />
+        {nextQueueTrack ? <RadioTrackCard track={nextQueueTrack} slot="next" statusLabel={continuationTrack ? 'READY / PRÊT' : continuationGenerating ? `BUILDING / ${generationProgress}%` : 'WAITING / ATTENTE'} building={continuationGenerating} /> : <div className="radio-queue-row is-next is-empty" data-testid="next-radio-track" aria-label="Prochain morceau"><div className="radio-queue-track-heading"><span>02 · UP NEXT</span><b>WAITING / ATTENTE</b></div><strong className="radio-queue-title">Prochain morceau en attente</strong><small>Les paramètres complets apparaîtront dès le lancement de sa préparation.</small></div>}
       </> : <div className="radio-queue-empty">Aucun flux dans le lecteur · importe ton SFT puis lance la composition.</div>}
     </div>
   </section>

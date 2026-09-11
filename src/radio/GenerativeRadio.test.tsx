@@ -113,7 +113,8 @@ describe('GenerativeRadio', () => {
       expect(selectedTags.every((tag: string) => pool.has(tag))).toBe(true)
     }
     expect(requests[1]!.keywords).not.toBe(requests[0]!.keywords)
-    expect(screen.getByText('6/10 TAGS')).toBeInTheDocument()
+    const activeTagCount = requests[0]!.keywords.split(',').map((tag: string) => tag.trim()).filter(Boolean).length
+    expect(screen.getByText(`${activeTagCount}/10 TAGS`)).toBeInTheDocument()
   })
 
   it('exposes the real-time pro monitoring controls without changing the generated recipe', () => {
@@ -211,6 +212,11 @@ describe('GenerativeRadio', () => {
     expect(continuation.durationSeconds).toBeLessThanOrEqual(360)
     expect(screen.getByRole('status')).toHaveTextContent('Morceau indépendant prêt')
     expect(screen.getByTestId('current-radio-track')).toHaveTextContent('01 · FLUX ACTIF')
+    for (const label of ['KEY', 'BPM', 'DURÉE', 'MODE', 'ÉVOLUTION', 'DÉRIVE', 'ÉNERGIE', 'MATIÈRE', 'SFT', 'SEED', 'PROMPT UTILISÉ', 'GENERATION ID']) {
+      expect(screen.getByTestId('current-radio-track')).toHaveTextContent(label)
+    }
+    expect(screen.getByTestId('current-radio-track')).toHaveTextContent('PROGRAMME')
+    expect(screen.getByTestId('current-radio-track')).toHaveTextContent(onGenerate.mock.calls[0]![0].keywords)
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('02 · UP NEXT')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('user tag alpha Relay')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('READY / PRÊT')
@@ -255,5 +261,35 @@ describe('GenerativeRadio', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Ajoute au moins un mot-clé')
     expect(keywords).toHaveAttribute('aria-invalid', 'true')
     expect(keywords).toHaveFocus()
+  })
+
+  it('shows complete metadata for the next programme while it is being prepared', async () => {
+    const secondResult = { audioUrl: 'blob:second-pending', id: 'b'.repeat(16), durationSeconds: 240 }
+    let resolveSecond!: (result: typeof secondResult) => void
+    const onGenerate = vi.fn()
+      .mockResolvedValueOnce({ audioUrl: 'blob:first-ready', id: 'a'.repeat(16), durationSeconds: 240 })
+      .mockImplementationOnce(() => new Promise<typeof secondResult>((resolve) => { resolveSecond = resolve }))
+    const selectedModel = {
+      id: 'c'.repeat(32),
+      filename: 'berlin-techno.safetensors',
+      size_bytes: 2048,
+      created_at: '2026-09-10T00:00:00',
+      format: 'safetensors' as const,
+      base_model: 'stable-audio-3-medium-mlx',
+    }
+    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+
+    const next = screen.getByTestId('next-radio-track')
+    for (const label of ['KEY', 'BPM', 'DURÉE', 'MODE', 'ÉVOLUTION', 'DÉRIVE', 'ÉNERGIE', 'MATIÈRE', 'SFT', 'SEED', 'PROMPT UTILISÉ', 'GENERATION ID']) {
+      expect(next).toHaveTextContent(label)
+    }
+    expect(next).toHaveTextContent('BUILDING / 4%')
+    expect(next).toHaveTextContent('EN PRÉPARATION')
+
+    resolveSecond(secondResult)
+    await waitFor(() => expect(next).toHaveTextContent('READY / PRÊT'))
   })
 })
