@@ -2,7 +2,7 @@
 
 A browser-first generative radio player for Stable Audio 3 Medium SFT models.
 
-The page is intentionally small: import a local `.safetensors` adapter, define a limited tag direction, and let the radio evolve its tempo, energy, texture, and next-track preparation procedurally. Playback, queueing, monitoring DSP, noise filtering, and intelligent limiting run in the browser.
+The page is intentionally small: import a local `.safetensors` adapter, enter an unlimited pool of user tags, and let the radio evolve its tempo, energy, texture, and next-track preparation procedurally. Each generation samples a different pseudo-random subset from that pool; the generation prompt contains no invented style tags. Playback, queueing, monitoring DSP, noise filtering, and intelligent limiting run in the browser.
 
 ## Run locally
 

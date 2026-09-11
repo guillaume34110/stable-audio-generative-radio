@@ -55,6 +55,7 @@ type RadioTrack = {
 type RadioRecipe = {
   keywords: string
   tags: string[]
+  keywordPool: string[]
   bpm: number
   drift: number
   energy: number
@@ -73,7 +74,6 @@ const minimumRadioProgramSeconds = 120
 const maximumRadioProgramSeconds = 360
 const defaultProgramDurationSeconds = 330
 const maximumSftBytes = 2 * 1024 * 1024 * 1024
-const maximumRadioTags = 8
 const fallbackModelVariants: readonly StableAudioRadioModelVariant[] = [
   {
     id: 'fp16',
@@ -142,7 +142,19 @@ const formatBytes = (bytes: number): string => {
   return `${Math.max(1, Math.round(bytes / 1024))} Ko`
 }
 
-const parseKeywords = (value: string): string[] => value.split(/[\n,]+/).map((token) => token.trim()).filter(Boolean).slice(0, maximumRadioTags)
+const parseKeywords = (value: string): string[] => {
+  const seen = new Set<string>()
+  return value
+    .split(/[\n,]+/)
+    .map((token) => token.trim())
+    .filter((token) => {
+      if (!token) return false
+      const normalized = token.toLocaleLowerCase()
+      if (seen.has(normalized)) return false
+      seen.add(normalized)
+      return true
+    })
+}
 
 const clamp = (value: number, minimum: number, maximum: number): number => Math.min(maximum, Math.max(minimum, value))
 
@@ -157,23 +169,35 @@ const proceduralValue = (seed: number, channel: number): number => {
   return value - Math.floor(value)
 }
 
-const buildProceduralRecipe = (input: Omit<RadioRecipe, 'keywords' | 'tags' | 'seed'> & { keywords: string }, variation: number, enabled: boolean): RadioRecipe => {
-  const baseTags = parseKeywords(input.keywords)
-  const seed = hashString(`${input.keywords}:${variation}`) % 2_147_483_647
-  if (!enabled || variation === 0) {
-    return {
-      ...input,
-      keywords: baseTags.join(', '),
-      tags: baseTags,
-      seed,
-    }
+const pickGenerationTags = (pool: readonly string[], seed: number): string[] => {
+  if (pool.length <= 2) return [...pool]
+  const targetSize = Math.min(pool.length, Math.max(2, Math.ceil(pool.length * 0.55)))
+  return pool
+    .map((tag, index) => ({ tag, index, rank: proceduralValue(seed, index + 101) }))
+    .sort((left, right) => left.rank - right.rank)
+    .slice(0, targetSize)
+    .sort((left, right) => left.index - right.index)
+    .map(({ tag }) => tag)
+}
+
+const buildProceduralRecipe = (input: Omit<RadioRecipe, 'keywords' | 'tags' | 'keywordPool' | 'seed'> & { keywords: string }, variation: number, enabled: boolean): RadioRecipe => {
+  const keywordPool = parseKeywords(input.keywords)
+  const normalizedKeywords = keywordPool.join(', ')
+  const seed = hashString(`${normalizedKeywords}:${variation}`) % 2_147_483_647
+  const tags = enabled ? pickGenerationTags(keywordPool, seed) : [...keywordPool]
+  const baseRecipe: RadioRecipe = {
+    ...input,
+    keywords: tags.join(', '),
+    tags,
+    keywordPool,
+    seed,
   }
+  if (!enabled || variation === 0) return baseRecipe
 
   // Auto-evolution may change the numerical controls, but it must never
   // invent a style, instrument, texture, or other content tag.
-  const tags = [...baseTags]
 
-  const trajectorySeed = hashString(input.keywords)
+  const trajectorySeed = hashString(normalizedKeywords)
   const swing = (channel: number, amplitude: number): number => {
     const phase = proceduralValue(trajectorySeed, channel + 20) * Math.PI * 2
     const period = 4.5 + proceduralValue(trajectorySeed, channel + 30) * 3.5
@@ -187,8 +211,7 @@ const buildProceduralRecipe = (input: Omit<RadioRecipe, 'keywords' | 'tags' | 's
     wild: ['wild', 'fluid', 'wild', 'fluid', 'slow', 'wild'],
   }
   return {
-    keywords: tags.join(', '),
-    tags,
+    ...baseRecipe,
     bpm: clamp(Math.round(input.bpm + swing(1, Math.max(1, input.drift / 4))), 60, 220),
     drift: clamp(Math.round(input.drift + swing(2, 24)), 0, 100),
     energy: clamp(Math.round(input.energy + swing(3, 18)), 0, 100),
@@ -324,6 +347,8 @@ export const GenerativeRadio = ({
   const bufferAdvance = currentTrack ? `${formatClock(remainingSeconds)} RESTANT` : '00:00 PRÊT'
   const continuationBufferState = continuationGenerating ? 'MORCEAU INDÉPENDANT EN CALCUL' : continuationTrack ? 'MORCEAU INDÉPENDANT PRÊT' : currentTrack ? 'PROCHAIN MORCEAU À PRÉPARER' : 'EN ATTENTE'
   const displayedTags = activeRecipe?.tags ?? keywordTokens
+  const displayedTagPool = activeRecipe?.keywordPool ?? keywordTokens
+  const tagCountLabel = activeRecipe ? `${displayedTags.length}/${displayedTagPool.length} TAGS` : `${displayedTagPool.length} TAGS`
   const displayedEvolution = currentTrack?.evolution ?? activeRecipe?.evolution ?? evolution
   const radioDspSettings = useMemo<RadioDspSettings>(() => ({
     preampDb,
@@ -498,7 +523,7 @@ export const GenerativeRadio = ({
     setGenerationProgress(4)
     const variation = variationCounterRef.current
     const recipe = buildProceduralRecipe({
-      keywords: sourceRecipe.keywords,
+      keywords: sourceRecipe.keywordPool.join(', '),
       bpm: sourceRecipe.bpm,
       drift: sourceRecipe.drift,
       energy: sourceRecipe.energy,
@@ -725,17 +750,17 @@ export const GenerativeRadio = ({
       </div>
 
       <form className="radio-recipe" noValidate onSubmit={(event) => void handleStart(event)} data-testid="radio-form">
-            <div className="radio-recipe-heading"><div><span className="radio-eyebrow">DIRECTIVE SONORE</span><h3>Façonne ta radio</h3></div><span className="radio-recipe-count">{displayedTags.length}/{maximumRadioTags} TAGS</span></div>
-        <label className="radio-keyword-field" htmlFor="radio-keywords"><span>Mots-clés</span><small>Ils définissent la trajectoire sonore du programme</small><textarea className="radio-keyword-textarea resize-none" ref={keywordsRef} id="radio-keywords" rows={2} value={keywords} onChange={(event) => { setKeywords(event.currentTarget.value); if (error) setError(null) }} placeholder="ambient pads, broken beat…" aria-describedby={error ? 'radio-error' : undefined} aria-invalid={Boolean(error)} /></label>
-        <div className="radio-keyword-chips" aria-label="Mots-clés actifs">{displayedTags.map((token) => <span key={token}>{token}</span>)}</div>
+            <div className="radio-recipe-heading"><div><span className="radio-eyebrow">DIRECTIVE SONORE</span><h3>Façonne ta radio</h3></div><span className="radio-recipe-count">{tagCountLabel}</span></div>
+        <label className="radio-keyword-field" htmlFor="radio-keywords"><span>Mots-clés</span><small>Pool sans limite · virgules ou retours à la ligne · tirage différent à chaque génération</small><textarea className="radio-keyword-textarea resize-none" ref={keywordsRef} id="radio-keywords" rows={3} value={keywords} onChange={(event) => { setKeywords(event.currentTarget.value); if (error) setError(null) }} placeholder="ambient pads, broken beat…" aria-describedby={error ? 'radio-error' : undefined} aria-invalid={Boolean(error)} /></label>
+        <div className="radio-keyword-chips" aria-label="Tags utilisés par la génération">{displayedTags.map((token) => <span key={token}>{token}</span>)}</div>
 
         <div className="radio-procedural-panel" data-testid="radio-procedural-panel">
           <div className="radio-procedural-toggle">
             <i aria-hidden="true" />
-            <span><strong>Évolution procédurale</strong><small>La matière, le tempo et les couches dérivent lentement dans le programme</small></span>
+            <span><strong>Évolution procédurale</strong><small>Seuls les tags saisis sont utilisés comme matière; tempo, énergie et couches dérivent lentement</small></span>
             <b>ON</b>
           </div>
-          <p>{activeRecipe ? `Flux actif · ${activeRecipe.tags.length}/${maximumRadioTags} tags utilisateur · ${activeRecipe.bpm} BPM · énergie ${activeRecipe.energy}% · matière ${activeRecipe.texture}%` : `Tags utilisateur uniquement · tempo, énergie et matière évoluent sur 6 min`}</p>
+          <p>{activeRecipe ? `Flux actif · ${activeRecipe.tags.length} tags tirés au hasard depuis un pool de ${activeRecipe.keywordPool.length} tags utilisateur · ${activeRecipe.bpm} BPM · énergie ${activeRecipe.energy}% · matière ${activeRecipe.texture}%` : `Tags utilisateur uniquement · chaque génération tire au hasard dans le pool · tempo, énergie et matière évoluent sur 6 min`}</p>
         </div>
 
         <div className="radio-dsp-panel" data-testid="radio-dsp-panel">

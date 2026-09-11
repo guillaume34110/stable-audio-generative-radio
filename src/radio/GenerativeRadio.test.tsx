@@ -72,6 +72,50 @@ describe('GenerativeRadio', () => {
     expect(screen.getByRole('heading', { name: 'dusty drums Drift' })).toBeInTheDocument()
   })
 
+  it('keeps an unlimited user tag pool and samples only user tags per generation', async () => {
+    const userTags = [
+      'minimal techno',
+      'dry kick',
+      'metallic hats',
+      'sub bass',
+      'warehouse reverb',
+      'tape saturation',
+      'rolling groove',
+      'night drive',
+      'neon tension',
+      'slow filter motion',
+    ]
+    const onGenerate = vi.fn()
+      .mockResolvedValueOnce({ audioUrl: 'blob:pool-first', id: '1'.repeat(16), durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:pool-second', id: '2'.repeat(16), durationSeconds: 240 })
+    const selectedModel = {
+      id: '3'.repeat(32),
+      filename: 'radio.safetensors',
+      size_bytes: 2048,
+      created_at: '2026-09-10T00:00:00',
+      format: 'safetensors' as const,
+      base_model: 'stable-audio-3-medium-mlx',
+    }
+    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Mots-clés/ }), { target: { value: userTags.join(', ') } })
+    expect(screen.getByText('10 TAGS')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+
+    const pool = new Set(userTags)
+    const requests = onGenerate.mock.calls.map(([request]) => request)
+    for (const request of requests) {
+      const selectedTags = request.keywords.split(',').map((tag: string) => tag.trim()).filter(Boolean)
+      expect(selectedTags.length).toBeGreaterThanOrEqual(2)
+      expect(selectedTags.length).toBeLessThan(userTags.length)
+      expect(selectedTags.every((tag: string) => pool.has(tag))).toBe(true)
+    }
+    expect(requests[1]!.keywords).not.toBe(requests[0]!.keywords)
+    expect(screen.getByText('6/10 TAGS')).toBeInTheDocument()
+  })
+
   it('exposes the real-time pro monitoring controls without changing the generated recipe', () => {
     render(<GenerativeRadio />)
 
@@ -175,8 +219,7 @@ describe('GenerativeRadio', () => {
 
     const manual = onGenerate.mock.calls[2]![0]
     expect(manual.continuationFromId).toBeNull()
-    expect(manual.keywords.split(',').filter(Boolean).length).toBeGreaterThanOrEqual(1)
-    expect(manual.keywords.split(',').filter(Boolean).length).toBeLessThanOrEqual(8)
+    expect(manual.keywords.split(',').map((tag: string) => tag.trim()).filter(Boolean)).toEqual(['user tag alpha', 'user tag beta'])
     expect(manual.bpm).toBeGreaterThanOrEqual(60)
     expect(manual.bpm).toBeLessThanOrEqual(220)
     expect(manual.drift).toBeGreaterThanOrEqual(0)

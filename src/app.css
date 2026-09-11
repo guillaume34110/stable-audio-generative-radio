@@ -161,7 +161,7 @@ button, select, input { font: inherit; }
 .radio-keyword-field > span,
 .radio-evolution-field legend { color: var(--radio-ink); font-size: .54rem; letter-spacing: .1em; }
 .radio-keyword-field > small { color: var(--radio-dim); font-size: .46rem; }
-.radio-keyword-field textarea { width: 100%; min-height: 66px; resize: none; padding: 9px 10px; border: 1px solid var(--radio-border); border-radius: 7px; outline: 0; background: rgba(4, 11, 7, .76); color: #fff; font-size: .59rem; line-height: 1.55; transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease; }
+.radio-keyword-field textarea { width: 100%; min-height: 84px; resize: vertical; padding: 9px 10px; border: 1px solid var(--radio-border); border-radius: 7px; outline: 0; background: rgba(4, 11, 7, .76); color: #fff; font-size: .59rem; line-height: 1.55; transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease; }
 .radio-keyword-field textarea:hover { border-color: var(--radio-border-strong); }
 .radio-keyword-field textarea:focus { border-color: var(--radio-lime); background: rgba(8, 22, 13, .9); box-shadow: 0 0 0 3px rgba(213, 255, 70, .08); }
 .radio-keyword-field textarea[aria-invalid="true"] { border-color: var(--radio-coral); }
