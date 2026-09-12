@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { GenerativeRadio } from './GenerativeRadio'
+import { GenerativeRadio, RADIO_KEYWORDS_STORAGE_KEY } from './GenerativeRadio'
 
 describe('GenerativeRadio', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:model') })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
   })
@@ -112,6 +113,10 @@ describe('GenerativeRadio', () => {
       expect(selectedTags.length).toBeLessThan(userTags.length)
       expect(selectedTags.every((tag: string) => pool.has(tag))).toBe(true)
     }
+    expect(requests[0]!.bpm).toBe(124)
+    expect(requests[1]!.bpm).toBe(requests[0]!.bpm)
+    expect(requests[0]!.drift).toBe(26)
+    expect(requests[1]!.drift).toBe(requests[0]!.drift)
     expect(requests[1]!.keywords).not.toBe(requests[0]!.keywords)
     const activeTagCount = requests[0]!.keywords.split(',').map((tag: string) => tag.trim()).filter(Boolean).length
     expect(screen.getByText(`${activeTagCount}/10 TAGS`)).toBeInTheDocument()
@@ -207,6 +212,8 @@ describe('GenerativeRadio', () => {
     expect(first.continuationFromId).toBeNull()
     expect(continuation.continuationFromId).toBe('c'.repeat(16))
     expect(continuation.keywords).toBe(first.keywords)
+    expect(continuation.bpm).toBe(first.bpm)
+    expect(continuation.drift).toBe(first.drift)
     expect(continuation.keywords.split(',').map((tag: string) => tag.trim())).toEqual(['user tag alpha', 'user tag beta'])
     expect(continuation.durationSeconds).toBeGreaterThanOrEqual(120)
     expect(continuation.durationSeconds).toBeLessThanOrEqual(360)
@@ -263,6 +270,65 @@ describe('GenerativeRadio', () => {
     expect(keywords).toHaveFocus()
   })
 
+  it('rebuilds the buffered next programme with the latest generation settings', async () => {
+    const onGenerate = vi.fn()
+      .mockResolvedValueOnce({ audioUrl: 'blob:first-settings', id: '1'.repeat(16), durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:stale-settings', id: '2'.repeat(16), durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:updated-settings', id: '3'.repeat(16), durationSeconds: 240 })
+    const selectedModel = {
+      id: '4'.repeat(32),
+      filename: 'berlin-techno.safetensors',
+      size_bytes: 2048,
+      created_at: '2026-09-10T00:00:00',
+      format: 'safetensors' as const,
+      base_model: 'stable-audio-3-medium-mlx',
+    }
+    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+
+    fireEvent.change(screen.getByLabelText(/Tempo de base/), { target: { value: '138' } })
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
+
+    const updated = onGenerate.mock.calls[2]![0]
+    expect(updated).toEqual(expect.objectContaining({
+      bpm: 138,
+      drift: 26,
+      continuationFromId: '1'.repeat(16),
+    }))
+    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('138')
+  })
+
+  it('discards an in-flight next programme when its settings become stale', async () => {
+    const staleNext = { audioUrl: 'blob:stale-in-flight', id: '6'.repeat(16), durationSeconds: 240 }
+    let resolveStaleNext!: (result: typeof staleNext) => void
+    const onGenerate = vi.fn()
+      .mockResolvedValueOnce({ audioUrl: 'blob:first-in-flight', id: '5'.repeat(16), durationSeconds: 240 })
+      .mockImplementationOnce(() => new Promise<typeof staleNext>((resolve) => { resolveStaleNext = resolve }))
+      .mockResolvedValueOnce({ audioUrl: 'blob:updated-in-flight', id: '7'.repeat(16), durationSeconds: 240 })
+    const selectedModel = {
+      id: '8'.repeat(32),
+      filename: 'berlin-techno.safetensors',
+      size_bytes: 2048,
+      created_at: '2026-09-10T00:00:00',
+      format: 'safetensors' as const,
+      base_model: 'stable-audio-3-medium-mlx',
+    }
+    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+    fireEvent.change(screen.getByLabelText(/Tempo de base/), { target: { value: '140' } })
+    resolveStaleNext(staleNext)
+
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
+    expect(onGenerate.mock.calls[2]![0]).toEqual(expect.objectContaining({
+      bpm: 140,
+      continuationFromId: '5'.repeat(16),
+    }))
+  })
+
   it('shows complete metadata for the next programme while it is being prepared', async () => {
     const secondResult = { audioUrl: 'blob:second-pending', id: 'b'.repeat(16), durationSeconds: 240 }
     let resolveSecond!: (result: typeof secondResult) => void
@@ -291,5 +357,72 @@ describe('GenerativeRadio', () => {
 
     resolveSecond(secondResult)
     await waitFor(() => expect(next).toHaveTextContent('READY / PRÊT'))
+  })
+
+  it('exposes model diffusion settings and forwards them to generation', async () => {
+    const onGenerate = vi.fn().mockResolvedValue({ audioUrl: 'blob:expert', id: 'e'.repeat(16), durationSeconds: 120 })
+    const selectedModel = {
+      id: 'd'.repeat(32),
+      filename: 'berlin-techno.safetensors',
+      size_bytes: 2048,
+      created_at: '2026-09-10T00:00:00',
+      format: 'safetensors' as const,
+      base_model: 'stable-audio-3-medium-mlx',
+    }
+    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+
+    expect(screen.getByTestId('radio-model-options-panel')).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: /Steps d’échantillonnage/ })).toHaveValue('8')
+    expect(screen.getByRole('slider', { name: /Guidance CFG/ })).toHaveValue('1')
+    expect(screen.getByRole('slider', { name: /Guidance APG/ })).toHaveValue('1')
+
+    fireEvent.change(screen.getByRole('slider', { name: /Steps d’échantillonnage/ }), { target: { value: '14' } })
+    fireEvent.change(screen.getByRole('slider', { name: /Guidance CFG/ }), { target: { value: '2.5' } })
+    fireEvent.change(screen.getByRole('slider', { name: /Guidance APG/ }), { target: { value: '0.75' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    await waitFor(() => expect(onGenerate).toHaveBeenCalled())
+    expect(onGenerate.mock.calls[0]![0]).toEqual(expect.objectContaining({
+      steps: 14,
+      cfg: 2.5,
+      apg: 0.75,
+    }))
+  })
+
+  it('persists keywords to localStorage and restores them across mounts', () => {
+    window.localStorage.setItem(RADIO_KEYWORDS_STORAGE_KEY, 'dark synth, berghain pulse')
+    const { unmount } = render(<GenerativeRadio />)
+
+    const textarea = screen.getByRole('textbox', { name: /Mots-clés/ })
+    expect(textarea).toHaveValue('dark synth, berghain pulse')
+
+    // Modifying keywords updates localStorage
+    fireEvent.change(textarea, { target: { value: 'deep tech, rolling groove' } })
+    expect(window.localStorage.getItem(RADIO_KEYWORDS_STORAGE_KEY)).toBe('deep tech, rolling groove')
+
+    // Reset button restores default and updates storage
+    const resetBtn = screen.getByRole('button', { name: 'Rétablir défaut' })
+    fireEvent.click(resetBtn)
+    expect(textarea).toHaveValue('minimal, minimal techno')
+    expect(window.localStorage.getItem(RADIO_KEYWORDS_STORAGE_KEY)).toBe('minimal, minimal techno')
+
+    unmount()
+  })
+
+  it('renders negative prompt with dark styling and tags underneath', () => {
+    render(<GenerativeRadio />)
+
+    const negTextarea = screen.getByRole('textbox', { name: /Prompt négatif/ })
+    expect(negTextarea).toHaveClass('radio-keyword-textarea')
+
+    // Modifying negative prompt displays negative chips underneath
+    fireEvent.change(negTextarea, { target: { value: 'vocals, static noise, glitch' } })
+
+    const chipsContainer = screen.getByLabelText('Tags exclus de la génération')
+    expect(chipsContainer).toBeInTheDocument()
+    expect(chipsContainer).toHaveClass('radio-keyword-chips', 'is-negative')
+    expect(screen.getByText('vocals')).toBeInTheDocument()
+    expect(screen.getByText('static noise')).toBeInTheDocument()
+    expect(screen.getByText('glitch')).toBeInTheDocument()
   })
 })

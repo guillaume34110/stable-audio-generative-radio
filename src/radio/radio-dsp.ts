@@ -89,11 +89,12 @@ export const createRadioDsp = (
   noiseHighpass.Q.value = 0.7
   noiseLowpass.type = 'lowpass'
   noiseLowpass.Q.value = 0.7
-  body.type = 'lowshelf'
-  body.frequency.value = 100
+  body.type = 'peaking'
+  body.frequency.value = 60
+  body.Q.value = 1.1
   clarity.type = 'peaking'
-  clarity.frequency.value = 1800
-  clarity.Q.value = 0.8
+  clarity.frequency.value = 2200
+  clarity.Q.value = 0.9
   air.type = 'highshelf'
   air.frequency.value = 8500
   inputMeter.fftSize = 256
@@ -124,17 +125,17 @@ export const createRadioDsp = (
     const dspAmount = settings.dspAmount / 100
 
     preamp.gain.setTargetAtTime(dbToGain(settings.preampDb), now, 0.018)
-    noiseHighpass.frequency.setTargetAtTime(dsp ? 20 + noiseAmount * 24 : 8, now, 0.045)
-    noiseLowpass.frequency.setTargetAtTime(dsp ? maxFilterFrequency - noiseAmount * 1_700 : maxFilterFrequency, now, 0.045)
-    body.gain.setTargetAtTime(dsp ? dspAmount * 0.9 : 0, now, 0.08)
-    clarity.gain.setTargetAtTime(dsp ? dspAmount * 0.6 : 0, now, 0.08)
-    air.gain.setTargetAtTime(dsp ? -dspAmount * 0.8 : 0, now, 0.08)
+    noiseHighpass.frequency.setTargetAtTime(dsp ? 28 + noiseAmount * 12 : 8, now, 0.045)
+    noiseLowpass.frequency.setTargetAtTime(dsp ? 17_000 - noiseAmount * 3_500 : maxFilterFrequency, now, 0.045)
+    body.gain.setTargetAtTime(dsp ? dspAmount * 3.6 : 0, now, 0.08)
+    clarity.gain.setTargetAtTime(dsp ? dspAmount * 2.2 : 0, now, 0.08)
+    air.gain.setTargetAtTime(dsp ? -dspAmount * 3.2 : 0, now, 0.08)
     intelligentTrim.gain.setTargetAtTime(settings.limiterEnabled ? intelligentTrim.gain.value : 1, now, 0.08)
     limiter.threshold.setTargetAtTime(settings.limiterEnabled ? settings.limiterCeilingDb : 0, now, 0.08)
-    limiter.knee.setTargetAtTime(0, now, 0.08)
+    limiter.knee.setTargetAtTime(settings.limiterEnabled ? 4 : 0, now, 0.08)
     limiter.ratio.setTargetAtTime(settings.limiterEnabled ? 20 : 1, now, 0.08)
-    limiter.attack.setTargetAtTime(settings.limiterEnabled ? 0.001 : 0.01, now, 0.08)
-    limiter.release.setTargetAtTime(settings.limiterEnabled ? 0.09 : 0.2, now, 0.08)
+    limiter.attack.setTargetAtTime(settings.limiterEnabled ? 0.016 : 0.01, now, 0.08)
+    limiter.release.setTargetAtTime(settings.limiterEnabled ? 0.14 : 0.2, now, 0.08)
     output.gain.setTargetAtTime(settings.limiterEnabled ? dbToGain(-0.15) : 1, now, 0.08)
   }
 

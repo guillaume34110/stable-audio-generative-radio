@@ -27,6 +27,10 @@ export type RadioGenerationRequest = {
   sftFile: File | null
   sftId: string | null
   seed?: number
+  steps?: number
+  cfg?: number
+  apg?: number
+  negativePrompt?: string
   // Backend lineage only: no audio from the previous track is reused.
   continuationFromId?: string | null
 }
@@ -66,11 +70,47 @@ type RadioRecipe = {
   loraStrength: number
   modelVariant: StableAudioRadioModelVariantId
   seed: number
+  steps?: number
+  cfg?: number
+  apg?: number
+  negativePrompt?: string
+}
+
+type RadioGenerationSettings = Omit<RadioRecipe, 'tags' | 'keywordPool' | 'seed'> & {
+  customSeed?: number
 }
 
 type ModelImportState = 'idle' | 'uploading' | 'ready' | 'error'
 
 const defaultKeywords = 'minimal, minimal techno'
+const defaultNegativePrompt = 'lead vocals, singing, speech, spoken words, vocal chops, broadband static, silence, clipping, abrupt truncation'
+const defaultSteps = 8
+const defaultCfg = 1.0
+const defaultApg = 1.0
+
+export const RADIO_KEYWORDS_STORAGE_KEY = 'onus-generative-radio-keywords'
+export const RADIO_NEGATIVE_PROMPT_STORAGE_KEY = 'onus-generative-radio-negative-prompt'
+
+const initialKeywords = (): string => {
+  if (typeof window === 'undefined') return defaultKeywords
+  try {
+    const stored = window.localStorage.getItem(RADIO_KEYWORDS_STORAGE_KEY)
+    return stored !== null && stored.trim() !== '' ? stored : defaultKeywords
+  } catch {
+    return defaultKeywords
+  }
+}
+
+const initialNegativePrompt = (): string => {
+  if (typeof window === 'undefined') return defaultNegativePrompt
+  try {
+    const stored = window.localStorage.getItem(RADIO_NEGATIVE_PROMPT_STORAGE_KEY)
+    return stored !== null && stored.trim() !== '' ? stored : defaultNegativePrompt
+  } catch {
+    return defaultNegativePrompt
+  }
+}
+
 const minimumRadioProgramSeconds = 120
 const maximumRadioProgramSeconds = 360
 const defaultProgramDurationSeconds = 330
@@ -187,10 +227,13 @@ const pickGenerationTags = (pool: readonly string[], seed: number): string[] => 
     .map(({ tag }) => tag)
 }
 
-const buildProceduralRecipe = (input: Omit<RadioRecipe, 'keywords' | 'tags' | 'keywordPool' | 'seed'> & { keywords: string }, variation: number, enabled: boolean): RadioRecipe => {
+const buildProceduralRecipe = (input: RadioGenerationSettings, variation: number, enabled: boolean): RadioRecipe => {
   const keywordPool = parseKeywords(input.keywords)
   const normalizedKeywords = keywordPool.join(', ')
-  const seed = hashString(`${normalizedKeywords}:${variation}`) % 2_147_483_647
+  const autoSeed = hashString(`${normalizedKeywords}:${variation}`) % 2_147_483_647
+  const seed = typeof input.customSeed === 'number' && Number.isFinite(input.customSeed)
+    ? input.customSeed
+    : autoSeed
   const tags = enabled ? pickGenerationTags(keywordPool, seed) : [...keywordPool]
   const baseRecipe: RadioRecipe = {
     ...input,
@@ -198,11 +241,16 @@ const buildProceduralRecipe = (input: Omit<RadioRecipe, 'keywords' | 'tags' | 'k
     tags,
     keywordPool,
     seed,
+    steps: input.steps ?? defaultSteps,
+    cfg: input.cfg ?? defaultCfg,
+    apg: input.apg ?? defaultApg,
+    negativePrompt: input.negativePrompt ?? defaultNegativePrompt,
   }
   if (!enabled || variation === 0) return baseRecipe
 
-  // Auto-evolution may change the numerical controls, but it must never
-  // invent a style, instrument, texture, or other content tag.
+  // Auto-evolution may change the non-tempo controls, but it must never
+  // invent a style, instrument, texture, or other content tag. BPM is the
+  // user's hard target and must stay identical for every generated window.
 
   const trajectorySeed = hashString(normalizedKeywords)
   const swing = (channel: number, amplitude: number): number => {
@@ -219,8 +267,8 @@ const buildProceduralRecipe = (input: Omit<RadioRecipe, 'keywords' | 'tags' | 'k
   }
   return {
     ...baseRecipe,
-    bpm: clamp(Math.round(input.bpm + swing(1, Math.max(1, input.drift / 4))), 60, 220),
-    drift: clamp(Math.round(input.drift + swing(2, 24)), 0, 100),
+    bpm: input.bpm,
+    drift: input.drift,
     energy: clamp(Math.round(input.energy + swing(3, 18)), 0, 100),
     texture: clamp(Math.round(input.texture + swing(4, 20)), 0, 100),
     evolution: nextEvolution[input.evolution][variation % nextEvolution[input.evolution].length]!,
@@ -230,6 +278,10 @@ const buildProceduralRecipe = (input: Omit<RadioRecipe, 'keywords' | 'tags' | 'k
       : 0.25,
     modelVariant: input.modelVariant,
     seed,
+    steps: input.steps ?? defaultSteps,
+    cfg: input.cfg ?? defaultCfg,
+    apg: input.apg ?? defaultApg,
+    negativePrompt: input.negativePrompt ?? defaultNegativePrompt,
   }
 }
 
@@ -264,14 +316,18 @@ const trackFromResult = (
 ): RadioTrack => ({
   ...trackFromRecipe(recipe, titleIndex, mode, result.id ?? Date.now()),
   title: result.title ?? titleForKeywords(recipe.tags, titleIndex),
-  bpm: result.bpm ?? recipe.bpm,
+  bpm: recipe.bpm,
   key: result.key ?? 'F#m',
   durationSeconds: result.durationSeconds ?? recipe.durationSeconds,
   audioUrl: result.audioUrl,
   state: 'ready',
 })
 
-const buildContinuationRecipe = (sourceRecipe: RadioRecipe, variation: number): RadioRecipe => buildProceduralRecipe({
+const buildContinuationRecipe = (
+  sourceRecipe: RadioRecipe,
+  variation: number,
+  latestSettings?: RadioGenerationSettings,
+): RadioRecipe => buildProceduralRecipe(latestSettings ?? {
   keywords: sourceRecipe.keywordPool.join(', '),
   bpm: sourceRecipe.bpm,
   drift: sourceRecipe.drift,
@@ -281,6 +337,10 @@ const buildContinuationRecipe = (sourceRecipe: RadioRecipe, variation: number): 
   durationSeconds: sourceRecipe.durationSeconds,
   loraStrength: sourceRecipe.loraStrength,
   modelVariant: sourceRecipe.modelVariant,
+  steps: sourceRecipe.steps,
+  cfg: sourceRecipe.cfg,
+  apg: sourceRecipe.apg,
+  negativePrompt: sourceRecipe.negativePrompt,
 }, variation, true)
 
 type RadioTrackCardProps = {
@@ -298,14 +358,16 @@ const RadioTrackCard = ({ track, slot, statusLabel, building = false }: RadioTra
     <strong className="radio-queue-title">{track.title}</strong>
     <dl className="radio-track-info-grid">
       <div><dt>KEY</dt><dd>{track.key}</dd></div>
-      <div><dt>BPM</dt><dd>{track.bpm}</dd></div>
+      <div><dt>BPM CIBLE</dt><dd>{track.bpm}</dd></div>
       <div><dt>DURÉE</dt><dd>{formatClock(track.durationSeconds)}</dd></div>
       <div><dt>MODE</dt><dd>{track.mode === 'independent' ? 'INDÉPENDANT' : 'PROGRAMME'}</dd></div>
       <div><dt>ÉVOLUTION</dt><dd>{evolutionLabel(track.recipe.evolution)}</dd></div>
-      <div><dt>DÉRIVE</dt><dd>±{Math.round(track.recipe.drift / 4)} BPM</dd></div>
+      <div><dt>DÉRIVE MAX</dt><dd>±{Math.round(track.recipe.drift / 4)} BPM · microtiming</dd></div>
       <div><dt>ÉNERGIE</dt><dd>{track.recipe.energy}%</dd></div>
       <div><dt>MATIÈRE</dt><dd>{track.recipe.texture}%</dd></div>
       <div><dt>SFT</dt><dd>{track.recipe.modelVariant.toUpperCase()} · {Math.round(track.recipe.loraStrength * 100)}%</dd></div>
+      <div><dt>STEPS</dt><dd>{track.recipe.steps ?? defaultSteps}</dd></div>
+      <div><dt>CFG / APG</dt><dd>{(track.recipe.cfg ?? defaultCfg).toFixed(1)} / {(track.recipe.apg ?? defaultApg).toFixed(2)}</dd></div>
       <div><dt>SEED</dt><dd>{track.recipe.seed}</dd></div>
     </dl>
     <div className="radio-track-prompt" aria-label={isCurrent ? 'Prompt du morceau actif' : 'Prompt de la prochaine génération'}>
@@ -341,7 +403,7 @@ export const GenerativeRadio = ({
   onSelectModel,
   selectedModel,
 }: GenerativeRadioProps): ReactElement => {
-  const [keywords, setKeywords] = useState(defaultKeywords)
+  const [keywords, setKeywords] = useState(initialKeywords)
   const [sftFile, setSftFile] = useState<File | null>(null)
   const [localModel, setLocalModel] = useState<StableAudioRadioAdapter | null>(selectedModel ?? null)
   const [modelImportState, setModelImportState] = useState<ModelImportState>(selectedModel ? 'ready' : 'idle')
@@ -353,6 +415,11 @@ export const GenerativeRadio = ({
   const [loraStrength, setLoraStrength] = useState(100)
   const [modelVariant, setModelVariant] = useState<StableAudioRadioModelVariantId>('fp16')
   const [evolution, setEvolution] = useState<RadioEvolution>('fluid')
+  const [steps, setSteps] = useState(defaultSteps)
+  const [cfg, setCfg] = useState(defaultCfg)
+  const [apg, setApg] = useState(defaultApg)
+  const [seedInput, setSeedInput] = useState('')
+  const [negativePrompt, setNegativePrompt] = useState(initialNegativePrompt)
   const [preampDb, setPreampDb] = useState(defaultRadioDspSettings.preampDb)
   const [dspEnabled, setDspEnabled] = useState(defaultRadioDspSettings.dspEnabled)
   const [noiseFilter, setNoiseFilter] = useState(defaultRadioDspSettings.noiseFilter)
@@ -382,6 +449,8 @@ export const GenerativeRadio = ({
   const continuationGeneratingRef = useRef(false)
   const programSessionRef = useRef(0)
   const playbackEndedRef = useRef(false)
+  const latestGenerationSettingsRef = useRef<RadioGenerationSettings | null>(null)
+  const settingsRevisionRef = useRef(0)
 
   useEffect(() => {
     if (selectedModel) {
@@ -392,15 +461,51 @@ export const GenerativeRadio = ({
 
   useEffect(() => {
     variationCounterRef.current = 0
+    settingsRevisionRef.current += 1
     setActiveRecipe(null)
-  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant])
+  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile, steps, cfg, apg, seedInput, negativePrompt])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(RADIO_KEYWORDS_STORAGE_KEY, keywords)
+    } catch {
+      // Ignore storage errors
+    }
+  }, [keywords])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(RADIO_NEGATIVE_PROMPT_STORAGE_KEY, negativePrompt)
+    } catch {
+      // Ignore storage errors
+    }
+  }, [negativePrompt])
 
   useEffect(() => {
     playbackPositionRef.current = position
   }, [position])
 
   const keywordTokens = useMemo(() => parseKeywords(keywords), [keywords])
+  const negativePromptTokens = useMemo(() => parseKeywords(negativePrompt), [negativePrompt])
   const selectedAdapter = selectedModel ?? localModel
+  latestGenerationSettingsRef.current = {
+    keywords,
+    bpm,
+    drift,
+    energy,
+    texture,
+    evolution,
+    durationSeconds,
+    loraStrength: modelVariant === 'fp16' ? loraStrength / 100 : 0.25,
+    modelVariant,
+    steps,
+    cfg,
+    apg,
+    negativePrompt,
+    customSeed: seedInput.trim() !== '' && Number.isFinite(Number(seedInput)) ? Number(seedInput) : undefined,
+  }
   const modelOptions = useMemo(() => {
     const options = selectedAdapter ? [selectedAdapter, ...availableModels] : [...availableModels]
     return options.filter((model, index, all) => all.findIndex((item) => item.id === model.id) === index)
@@ -426,7 +531,7 @@ export const GenerativeRadio = ({
   const projectedSourceTrack = currentTrack ?? activeQueueTrack
   const projectedVariation = currentTrack ? variationCounterRef.current : variationCounterRef.current + 1
   const projectedContinuationTrack = projectedSourceTrack
-    ? trackFromRecipe(buildContinuationRecipe(projectedSourceTrack.recipe, projectedVariation), projectedVariation, 'independent')
+    ? trackFromRecipe(buildContinuationRecipe(projectedSourceTrack.recipe, projectedVariation, latestGenerationSettingsRef.current ?? undefined), projectedVariation, 'independent')
     : null
   const nextQueueTrack = continuationTrack ?? continuationPreview ?? projectedContinuationTrack
   const radioDspSettings = useMemo<RadioDspSettings>(() => ({
@@ -601,12 +706,15 @@ export const GenerativeRadio = ({
 
   async function prefetchContinuation(sourceTrack: RadioTrack, sourceRecipe: RadioRecipe, session: number): Promise<void> {
     if (continuationGeneratingRef.current || continuationTrackRef.current || !onGenerate || typeof sourceTrack.id !== 'string') return
+    const latestSettings = latestGenerationSettingsRef.current
+    if (!latestSettings?.keywords.trim()) return
+    const requestRevision = settingsRevisionRef.current
 
     continuationGeneratingRef.current = true
     setContinuationGenerating(true)
     setGenerationProgress(4)
     const variation = variationCounterRef.current
-    const recipe = buildContinuationRecipe(sourceRecipe, variation)
+    const recipe = buildContinuationRecipe(sourceRecipe, variation, latestSettings)
     const previewTrack = trackFromRecipe(recipe, variation, 'independent')
     setContinuationPreview(previewTrack)
     const request: RadioGenerationRequest = {
@@ -618,20 +726,26 @@ export const GenerativeRadio = ({
       evolution: recipe.evolution,
       durationSeconds: recipe.durationSeconds,
       loraStrength: recipe.loraStrength,
-      modelVariant: sourceRecipe.modelVariant,
-      sftFile: sourceRecipe.modelVariant === 'fp16' ? sftFile : null,
-      sftId: sourceRecipe.modelVariant === 'fp16' ? selectedAdapter?.id ?? null : null,
+      modelVariant: recipe.modelVariant,
+      sftFile: recipe.modelVariant === 'fp16' ? sftFile : null,
+      sftId: recipe.modelVariant === 'fp16' ? selectedAdapter?.id ?? null : null,
       seed: recipe.seed,
+      steps: recipe.steps,
+      cfg: recipe.cfg,
+      apg: recipe.apg,
+      negativePrompt: recipe.negativePrompt,
       continuationFromId: sourceTrack.id,
     }
     let completedTrack: RadioTrack | null = null
+    let staleSettings = false
     try {
       setStatus('Stable Audio 3 prépare un morceau indépendant…')
       const result = await onGenerate(request, (nextProgress) => {
         if (session === programSessionRef.current) setGenerationProgress(clamp(nextProgress, 0, 100))
       })
       if (!result?.audioUrl) throw new Error('Le moteur n’a pas renvoyé le morceau indépendant.')
-      if (session !== programSessionRef.current) {
+      staleSettings = requestRevision !== settingsRevisionRef.current
+      if (session !== programSessionRef.current || staleSettings) {
         onReleaseAudioUrl?.(result.audioUrl)
         return
       }
@@ -644,15 +758,44 @@ export const GenerativeRadio = ({
       setGenerationProgress(100)
       setStatus('Morceau indépendant prêt en avance · le flux gardera la même évolution.')
     } catch {
-      if (session === programSessionRef.current) setStatus('Programme actif · le morceau indépendant doit être recalculé.')
+      staleSettings = requestRevision !== settingsRevisionRef.current
+      if (!staleSettings && session === programSessionRef.current) setStatus('Programme actif · le morceau indépendant doit être recalculé.')
     } finally {
       continuationGeneratingRef.current = false
       if (session !== programSessionRef.current) return
       setContinuationGenerating(false)
+      if (staleSettings) {
+        setContinuationPreview(null)
+        window.setTimeout(() => {
+          if (session === programSessionRef.current && !continuationTrackRef.current) {
+            void prefetchContinuation(sourceTrack, sourceRecipe, session)
+          }
+        }, 0)
+        return
+      }
       if (!completedTrack) setContinuationPreview(previewTrack)
       if (completedTrack && playbackEndedRef.current && continuationTrackRef.current?.id === completedTrack.id) activateContinuation(completedTrack)
     }
   }
+
+  useEffect(() => {
+    const sourceTrack = currentTrack
+    if (!sourceTrack || typeof sourceTrack.id !== 'string') return
+
+    const preparedTrack = continuationTrackRef.current
+    if (preparedTrack) {
+      onReleaseAudioUrl?.(preparedTrack.audioUrl)
+      continuationTrackRef.current = null
+      setContinuationTrack(null)
+      setContinuationPreview(null)
+    }
+    const session = programSessionRef.current
+    window.setTimeout(() => {
+      if (session === programSessionRef.current && currentTrack?.id === sourceTrack.id && !continuationTrackRef.current) {
+        void prefetchContinuation(sourceTrack, sourceTrack.recipe, session)
+      }
+    }, 0)
+  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile])
 
   function activateContinuation(track: RadioTrack): void {
     if (!track.audioUrl) return
@@ -716,6 +859,11 @@ export const GenerativeRadio = ({
       durationSeconds,
       loraStrength: modelVariant === 'fp16' ? loraStrength / 100 : 0.25,
       modelVariant,
+      steps,
+      cfg,
+      apg,
+      negativePrompt,
+      customSeed: seedInput.trim() !== '' && Number.isFinite(Number(seedInput)) ? Number(seedInput) : undefined,
     }, variation, true)
     setActiveRecipe(recipe)
     setStatus('Stable Audio 3 compose un programme continu de plusieurs minutes…')
@@ -732,6 +880,10 @@ export const GenerativeRadio = ({
       sftFile: recipe.modelVariant === 'fp16' ? sftFile : null,
       sftId: recipe.modelVariant === 'fp16' ? selectedAdapter?.id ?? null : null,
       seed: recipe.seed,
+      steps: recipe.steps,
+      cfg: recipe.cfg,
+      apg: recipe.apg,
+      negativePrompt: recipe.negativePrompt,
       continuationFromId: null,
     }
     try {
@@ -839,32 +991,47 @@ export const GenerativeRadio = ({
 
       <form className="radio-recipe" noValidate onSubmit={(event) => void handleStart(event)} data-testid="radio-form">
             <div className="radio-recipe-heading"><div><span className="radio-eyebrow">DIRECTIVE SONORE</span><h3>Façonne ta radio</h3></div><span className="radio-recipe-count">{tagCountLabel}</span></div>
-        <label className="radio-keyword-field" htmlFor="radio-keywords"><span>Mots-clés</span><small>Pool sans limite · virgules ou retours à la ligne · tirage différent à chaque génération</small><textarea className="radio-keyword-textarea resize-none" ref={keywordsRef} id="radio-keywords" rows={3} value={keywords} onChange={(event) => { setKeywords(event.currentTarget.value); if (error) setError(null) }} placeholder="ambient pads, broken beat…" aria-describedby={error ? 'radio-error' : undefined} aria-invalid={Boolean(error)} /></label>
+        <div className="radio-keyword-field">
+          <div className="radio-keyword-field-head">
+            <label htmlFor="radio-keywords">Mots-clés</label>
+            {keywords !== defaultKeywords ? (
+              <button
+                type="button"
+                className="radio-keyword-reset-btn"
+                onClick={() => setKeywords(defaultKeywords)}
+              >
+                Rétablir défaut
+              </button>
+            ) : null}
+          </div>
+          <small>Pool sans limite · virgules ou retours à la ligne · tirage différent à chaque génération</small>
+          <textarea className="radio-keyword-textarea resize-none" ref={keywordsRef} id="radio-keywords" rows={3} value={keywords} onChange={(event) => { setKeywords(event.currentTarget.value); if (error) setError(null) }} placeholder="ambient pads, broken beat…" aria-describedby={error ? 'radio-error' : undefined} aria-invalid={Boolean(error)} />
+        </div>
         <div className="radio-keyword-chips" aria-label="Tags utilisés par la génération">{displayedTags.map((token) => <span key={token}>{token}</span>)}</div>
 
         <div className="radio-procedural-panel" data-testid="radio-procedural-panel">
           <div className="radio-procedural-toggle">
             <i aria-hidden="true" />
-            <span><strong>Évolution procédurale</strong><small>Seuls les tags saisis sont utilisés comme matière; tempo, énergie et couches dérivent lentement</small></span>
+            <span><strong>Évolution procédurale</strong><small>Seuls les tags saisis sont utilisés comme matière; le BPM cible reste verrouillé, énergie et couches dérivent lentement</small></span>
             <b>ON</b>
           </div>
-          <p>{activeRecipe ? `Flux actif · ${activeRecipe.tags.length} tags tirés au hasard depuis un pool de ${activeRecipe.keywordPool.length} tags utilisateur · ${activeRecipe.bpm} BPM · énergie ${activeRecipe.energy}% · matière ${activeRecipe.texture}%` : `Tags utilisateur uniquement · nombre de tags variable à chaque génération · tempo, énergie et matière évoluent sur 6 min`}</p>
+          <p>{activeRecipe ? `Flux actif · ${activeRecipe.tags.length} tags tirés au hasard depuis un pool de ${activeRecipe.keywordPool.length} tags utilisateur · ${activeRecipe.bpm} BPM cible verrouillé · énergie ${activeRecipe.energy}% · matière ${activeRecipe.texture}%` : `Tags utilisateur uniquement · nombre de tags variable à chaque génération · BPM cible verrouillé · énergie et matière évoluent sur 6 min`}</p>
         </div>
 
         <div className="radio-dsp-panel" data-testid="radio-dsp-panel">
           <label className="radio-dsp-switch" htmlFor="radio-dsp-enabled">
             <input id="radio-dsp-enabled" type="checkbox" checked={dspEnabled} onChange={(event) => setDspEnabled(event.currentTarget.checked)} />
-            <span><strong>DSP PRO / MONITORING</strong><small>Préampli, nettoyage spectral et finition intégrés à la lecture</small></span>
+            <span><strong>DSP PRO / MONITORING</strong><small>Rondeur kick 60Hz, clarté 2.2kHz, anti-traîne 8.5kHz & limiteur doux</small></span>
             <b>{dspEnabled ? 'ON' : 'OFF'}</b>
           </label>
           <p>Chaîne temps réel · le WAV généré reste intact · réglages appliqués uniquement au player.</p>
           <div className="radio-dsp-control-grid">
             <label className="radio-slider-field" htmlFor="radio-preamp"><span>Préampli <b>{formatDecibels(preampDb)}</b></span><input id="radio-preamp" type="range" min="-12" max="12" step="0.5" value={preampDb} style={percentStyle((preampDb + 12) / 24 * 100)} onChange={(event) => setPreampDb(event.currentTarget.valueAsNumber)} /></label>
-            <label className="radio-slider-field" htmlFor="radio-dsp-amount"><span>DSP / clarté <b>{dspAmount}%</b></span><input id="radio-dsp-amount" type="range" min="0" max="100" step="1" value={dspAmount} style={percentStyle(dspAmount)} onChange={(event) => setDspAmount(event.currentTarget.valueAsNumber)} disabled={!dspEnabled} /></label>
-            <label className="radio-slider-field" htmlFor="radio-noise-filter"><span>Filtre bruit <b>{noiseFilter}%</b></span><input id="radio-noise-filter" type="range" min="0" max="100" step="1" value={noiseFilter} style={percentStyle(noiseFilter)} onChange={(event) => setNoiseFilter(event.currentTarget.valueAsNumber)} disabled={!dspEnabled} /></label>
+            <label className="radio-slider-field" htmlFor="radio-dsp-amount"><span>DSP / clarté & rondeur <b>{dspAmount}%</b></span><input id="radio-dsp-amount" type="range" min="0" max="100" step="1" value={dspAmount} style={percentStyle(dspAmount)} onChange={(event) => setDspAmount(event.currentTarget.valueAsNumber)} disabled={!dspEnabled} /></label>
+            <label className="radio-slider-field" htmlFor="radio-noise-filter"><span>Filtre bruit (anti-artefacts HF) <b>{noiseFilter}%</b></span><input id="radio-noise-filter" type="range" min="0" max="100" step="1" value={noiseFilter} style={percentStyle(noiseFilter)} onChange={(event) => setNoiseFilter(event.currentTarget.valueAsNumber)} disabled={!dspEnabled} /></label>
             <label className="radio-dsp-switch radio-dsp-limiter-switch" htmlFor="radio-limiter-enabled">
               <input id="radio-limiter-enabled" type="checkbox" checked={limiterEnabled} onChange={(event) => setLimiterEnabled(event.currentTarget.checked)} />
-              <span><strong>LIMITER INTELLIGENT</strong><small>Auto-trim + plafond de sécurité</small></span>
+              <span><strong>LIMITER INTELLIGENT</strong><small>Attaque 16ms (laisse respirer le kick) + knee doux</small></span>
               <b>{limiterEnabled ? 'ON' : 'OFF'}</b>
             </label>
             <label className="radio-slider-field" htmlFor="radio-limiter-ceiling"><span>Plafond <b>{formatDecibels(limiterCeilingDb)}</b></span><input id="radio-limiter-ceiling" type="range" min="-6" max="-0.3" step="0.1" value={limiterCeilingDb} style={percentStyle((limiterCeilingDb + 6) / 5.7 * 100)} onChange={(event) => setLimiterCeilingDb(event.currentTarget.valueAsNumber)} disabled={!limiterEnabled} /></label>
@@ -877,8 +1044,8 @@ export const GenerativeRadio = ({
         </div>
 
         <div className="radio-control-grid">
-          <label className="radio-slider-field" htmlFor="radio-bpm"><span>Tempo de base <b>{bpm} BPM</b></span><input id="radio-bpm" type="range" min="60" max="220" step="1" value={bpm} style={percentStyle((bpm - 60) / 160 * 100)} onChange={(event) => setBpm(event.currentTarget.valueAsNumber)} /></label>
-          <label className="radio-slider-field" htmlFor="radio-drift"><span>Dérive <b>±{Math.round(drift / 4)} BPM</b></span><input id="radio-drift" type="range" min="0" max="100" step="1" value={drift} style={percentStyle(drift)} onChange={(event) => setDrift(event.currentTarget.valueAsNumber)} /></label>
+          <label className="radio-slider-field" htmlFor="radio-bpm"><span>Tempo de base · cible verrouillée <b>{bpm} BPM</b></span><input id="radio-bpm" type="range" min="60" max="220" step="1" value={bpm} style={percentStyle((bpm - 60) / 160 * 100)} onChange={(event) => setBpm(event.currentTarget.valueAsNumber)} /></label>
+          <label className="radio-slider-field" htmlFor="radio-drift"><span>Dérive · microtiming <b>±{Math.round(drift / 4)} BPM</b></span><input id="radio-drift" type="range" min="0" max="100" step="1" value={drift} style={percentStyle(drift)} onChange={(event) => setDrift(event.currentTarget.valueAsNumber)} /></label>
           <label className="radio-slider-field" htmlFor="radio-energy"><span>Énergie <b>{energy}%</b></span><input id="radio-energy" type="range" min="0" max="100" step="1" value={energy} style={percentStyle(energy)} onChange={(event) => setEnergy(event.currentTarget.valueAsNumber)} /></label>
           <label className="radio-slider-field" htmlFor="radio-texture"><span>Matière <b>{texture}%</b></span><input id="radio-texture" type="range" min="0" max="100" step="1" value={texture} style={percentStyle(texture)} onChange={(event) => setTexture(event.currentTarget.valueAsNumber)} /></label>
           <label className="radio-slider-field" htmlFor="radio-duration"><span>Programme <b>{formatClock(durationSeconds)}</b></span><input id="radio-duration" type="range" min={minimumRadioProgramSeconds} max={maximumRadioProgramSeconds} step="1" value={durationSeconds} style={percentStyle((durationSeconds - minimumRadioProgramSeconds) / (maximumRadioProgramSeconds - minimumRadioProgramSeconds) * 100)} onChange={(event) => setDurationSeconds(event.currentTarget.valueAsNumber)} /></label>
@@ -886,6 +1053,47 @@ export const GenerativeRadio = ({
         </div>
 
         <fieldset className="radio-evolution-field"><legend>Courbe d’évolution</legend><div className="radio-evolution-options">{evolutionLabels.map((item) => <button key={item.id} className={evolution === item.id ? 'is-selected' : ''} type="button" aria-pressed={evolution === item.id} onClick={() => setEvolution(item.id)}><strong>{item.label}</strong><small>{item.hint}</small></button>)}</div></fieldset>
+
+        <details className="radio-model-options-panel" data-testid="radio-model-options-panel" open>
+          <summary className="radio-model-options-summary">
+            <span><strong>OPTIONS DU MODÈLE (DIFFUSION)</strong><small>Steps, CFG, APG, seed & prompt négatif</small></span>
+            <span className="radio-model-options-badge">RÉGLAGES LLM / IA</span>
+          </summary>
+          <div className="radio-dsp-control-grid" style={{ paddingTop: '8px' }}>
+            <label className="radio-slider-field" htmlFor="radio-steps"><span>Steps d’échantillonnage <b>{steps} steps</b></span><input id="radio-steps" type="range" min="1" max="24" step="1" value={steps} style={percentStyle((steps - 1) / 23 * 100)} onChange={(event) => setSteps(event.currentTarget.valueAsNumber)} /></label>
+            <label className="radio-slider-field" htmlFor="radio-cfg"><span>Guidance CFG <b>{cfg.toFixed(1)}</b></span><input id="radio-cfg" type="range" min="0" max="5" step="0.1" value={cfg} style={percentStyle(cfg / 5 * 100)} onChange={(event) => setCfg(event.currentTarget.valueAsNumber)} /></label>
+            <label className="radio-slider-field" htmlFor="radio-apg"><span>Guidance APG <b>{apg.toFixed(2)}</b></span><input id="radio-apg" type="range" min="0" max="1" step="0.05" value={apg} style={percentStyle(apg * 100)} onChange={(event) => setApg(event.currentTarget.valueAsNumber)} /></label>
+            <label className="radio-slider-field" htmlFor="radio-seed"><span>Seed fixe <b>{seedInput.trim() ? seedInput : 'Aléatoire'}</b></span><input id="radio-seed" type="number" min="0" max="2147483647" placeholder="Aléatoire (ex: 42)" value={seedInput} onChange={(event) => setSeedInput(event.currentTarget.value)} className="radio-number-input" /></label>
+          </div>
+          <div className="radio-keyword-field radio-negative-prompt-field">
+            <div className="radio-keyword-field-head">
+              <label htmlFor="radio-negative-prompt">Prompt négatif (termes exclus)</label>
+              {negativePrompt !== defaultNegativePrompt ? (
+                <button
+                  type="button"
+                  className="radio-keyword-reset-btn"
+                  onClick={() => setNegativePrompt(defaultNegativePrompt)}
+                >
+                  Rétablir défaut
+                </button>
+              ) : null}
+            </div>
+            <small>Termes et artefacts exclus · virgules ou retours à la ligne</small>
+            <textarea
+              id="radio-negative-prompt"
+              rows={2}
+              value={negativePrompt}
+              onChange={(event) => setNegativePrompt(event.currentTarget.value)}
+              className="radio-keyword-textarea resize-none"
+              placeholder="lead vocals, speech, broadband static…"
+            />
+          </div>
+          <div className="radio-keyword-chips is-negative" aria-label="Tags exclus de la génération">
+            {negativePromptTokens.map((token) => (
+              <span key={token}>{token}</span>
+            ))}
+          </div>
+        </details>
 
         <div className="radio-recipe-footer">
           <span className="radio-procedural-footer-toggle radio-static-mode"><i aria-hidden="true" /> <span>Auto-évolution</span><b>ON</b></span>

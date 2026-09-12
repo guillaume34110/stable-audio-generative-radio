@@ -80,6 +80,10 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
       duration_seconds: request.durationSeconds,
       lora_strength: request.loraStrength,
       seed: request.seed,
+      steps: request.steps,
+      cfg: request.cfg,
+      apg: request.apg,
+      negative_prompt: request.negativePrompt,
       continuation_from_generation_id: request.continuationFromId ?? undefined,
     })
     const completed = await waitForStableAudioRadioGeneration(job.generation_id, (update) => onProgress?.(update.progress ?? 0))
