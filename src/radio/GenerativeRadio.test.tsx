@@ -425,4 +425,83 @@ describe('GenerativeRadio', () => {
     expect(screen.getByText('static noise')).toBeInTheDocument()
     expect(screen.getByText('glitch')).toBeInTheDocument()
   })
+
+  it('removes a keyword chip when clicking its cross button', () => {
+    render(<GenerativeRadio />)
+
+    const textarea = screen.getByRole('textbox', { name: /Mots-clés/ })
+    expect(textarea).toHaveValue('minimal, minimal techno')
+
+    const removeBtn = screen.getByRole('button', { name: 'Retirer minimal' })
+    fireEvent.click(removeBtn)
+
+    expect(textarea).toHaveValue('minimal techno')
+  })
+
+  it('opens tag catalogue modal, filters tags and allows selecting/toggling tags', () => {
+    render(<GenerativeRadio />)
+
+    const openBtn = screen.getByRole('button', { name: /Catalogue des tags/i })
+    fireEvent.click(openBtn)
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText('Catalogue de tags & structure')).toBeInTheDocument()
+
+    // Filter by search
+    const searchInput = screen.getByPlaceholderText(/Filtrer les tags/i)
+    fireEvent.change(searchInput, { target: { value: 'Acid' } })
+
+    // Find and toggle tag
+    const acidTag = screen.getByRole('button', { name: /Acid Techno/i })
+    expect(acidTag).toBeInTheDocument()
+    fireEvent.click(acidTag)
+
+    // The keyword input now contains Acid Techno
+    const textarea = screen.getByRole('textbox', { name: /Mots-clés/ })
+    expect((textarea as HTMLTextAreaElement).value).toContain('Acid Techno')
+
+    // Close modal
+    fireEvent.click(screen.getByRole('button', { name: 'Valider & fermer' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('adds, reorders, and removes phases in chronological timeline and includes arrangement in recipe', async () => {
+    const onGenerate = vi.fn().mockResolvedValue({ audioUrl: 'blob:audio', id: 'gen-phase', durationSeconds: 240 })
+    const selectedModel = {
+      id: 'm'.repeat(32),
+      filename: 'model.safetensors',
+      size_bytes: 1024,
+      created_at: '2026-09-10T00:00:00',
+      format: 'safetensors' as const,
+      base_model: 'stable-audio-3-medium-mlx',
+    }
+
+    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+
+    // Click "Frise par défaut" to populate standard phases
+    fireEvent.click(screen.getByRole('button', { name: 'Frise par défaut' }))
+
+    const track = screen.getByLabelText('Séquence chronologique des phases')
+    expect(track).toHaveTextContent('Intro')
+    expect(track).toHaveTextContent('Drop')
+    expect(track).toHaveTextContent('Climax')
+
+    // Remove one phase using its cross
+    const removeIntroBtn = screen.getByRole('button', { name: 'Retirer la phase Intro en position 1' })
+    fireEvent.click(removeIntroBtn)
+    expect(track).not.toHaveTextContent('Intro')
+
+    // Add a phase from the palette
+    const addOutroBtn = screen.getByRole('button', { name: 'Ajouter Outro' })
+    fireEvent.click(addOutroBtn)
+
+    // Generate and check prompt includes arrangement
+    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+
+    await waitFor(() => expect(onGenerate).toHaveBeenCalled())
+    const sentRequest = onGenerate.mock.calls[0]![0] as { keywords: string; phases: string[] }
+    expect(sentRequest.keywords).toContain('arrangement:')
+    expect(sentRequest.phases).toBeDefined()
+    expect(sentRequest.phases).toContain('Drop')
+  })
 })

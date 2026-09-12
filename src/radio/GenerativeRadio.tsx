@@ -11,6 +11,14 @@ import {
   type RadioDspMeter,
   type RadioDspSettings,
 } from './radio-dsp'
+import {
+  CATEGORY_LABELS,
+  DEFAULT_PHASE_SEQUENCE,
+  formatPhasesPrompt,
+  STABLE_AUDIO_TAGS,
+  TRACK_PHASES,
+  type TagCategory,
+} from './stable-audio-tags'
 
 export type RadioEvolution = 'slow' | 'fluid' | 'wild'
 
@@ -31,6 +39,7 @@ export type RadioGenerationRequest = {
   cfg?: number
   apg?: number
   negativePrompt?: string
+  phases?: string[]
   // Backend lineage only: no audio from the previous track is reused.
   continuationFromId?: string | null
 }
@@ -61,6 +70,7 @@ type RadioRecipe = {
   keywords: string
   tags: string[]
   keywordPool: string[]
+  phases?: string[]
   bpm: number
   drift: number
   energy: number
@@ -90,6 +100,7 @@ const defaultApg = 1.0
 
 export const RADIO_KEYWORDS_STORAGE_KEY = 'onus-generative-radio-keywords'
 export const RADIO_NEGATIVE_PROMPT_STORAGE_KEY = 'onus-generative-radio-negative-prompt'
+export const RADIO_PHASES_STORAGE_KEY = 'onus-generative-radio-phases'
 
 const initialKeywords = (): string => {
   if (typeof window === 'undefined') return defaultKeywords
@@ -108,6 +119,20 @@ const initialNegativePrompt = (): string => {
     return stored !== null && stored.trim() !== '' ? stored : defaultNegativePrompt
   } catch {
     return defaultNegativePrompt
+  }
+}
+
+const initialPhases = (): string[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const stored = window.localStorage.getItem(RADIO_PHASES_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed)) return parsed
+    }
+    return []
+  } catch {
+    return []
   }
 }
 
@@ -235,11 +260,15 @@ const buildProceduralRecipe = (input: RadioGenerationSettings, variation: number
     ? input.customSeed
     : autoSeed
   const tags = enabled ? pickGenerationTags(keywordPool, seed) : [...keywordPool]
+  const phases = input.phases ?? []
+  const phasesSuffix = phases.length > 0 ? formatPhasesPrompt(phases) : ''
+  const generatedKeywords = [tags.join(', '), phasesSuffix].filter(Boolean).join(' · ')
   const baseRecipe: RadioRecipe = {
     ...input,
-    keywords: tags.join(', '),
+    keywords: generatedKeywords,
     tags,
     keywordPool,
+    phases,
     seed,
     steps: input.steps ?? defaultSteps,
     cfg: input.cfg ?? defaultCfg,
@@ -329,6 +358,7 @@ const buildContinuationRecipe = (
   latestSettings?: RadioGenerationSettings,
 ): RadioRecipe => buildProceduralRecipe(latestSettings ?? {
   keywords: sourceRecipe.keywordPool.join(', '),
+  phases: sourceRecipe.phases,
   bpm: sourceRecipe.bpm,
   drift: sourceRecipe.drift,
   energy: sourceRecipe.energy,
@@ -369,6 +399,12 @@ const RadioTrackCard = ({ track, slot, statusLabel, building = false }: RadioTra
       <div><dt>STEPS</dt><dd>{track.recipe.steps ?? defaultSteps}</dd></div>
       <div><dt>CFG / APG</dt><dd>{(track.recipe.cfg ?? defaultCfg).toFixed(1)} / {(track.recipe.apg ?? defaultApg).toFixed(2)}</dd></div>
       <div><dt>SEED</dt><dd>{track.recipe.seed}</dd></div>
+      {track.recipe.phases && track.recipe.phases.length > 0 && (
+        <div style={{ gridColumn: 'span 3' }}>
+          <dt>STRUCTURE / PHASES</dt>
+          <dd>{track.recipe.phases.join(' → ')}</dd>
+        </div>
+      )}
     </dl>
     <div className="radio-track-prompt" aria-label={isCurrent ? 'Prompt du morceau actif' : 'Prompt de la prochaine génération'}>
       <span>PROMPT UTILISÉ · {track.recipe.tags.length}/{track.recipe.keywordPool.length} TAGS</span>
@@ -404,6 +440,11 @@ export const GenerativeRadio = ({
   selectedModel,
 }: GenerativeRadioProps): ReactElement => {
   const [keywords, setKeywords] = useState(initialKeywords)
+  const [phases, setPhases] = useState<string[]>(initialPhases)
+  const [tagModalOpen, setTagModalOpen] = useState(false)
+  const [modalCategory, setModalCategory] = useState<TagCategory | 'all'>('all')
+  const [modalSearch, setModalSearch] = useState('')
+  const [draggedPhaseIndex, setDraggedPhaseIndex] = useState<number | null>(null)
   const [sftFile, setSftFile] = useState<File | null>(null)
   const [localModel, setLocalModel] = useState<StableAudioRadioAdapter | null>(selectedModel ?? null)
   const [modelImportState, setModelImportState] = useState<ModelImportState>(selectedModel ? 'ready' : 'idle')
@@ -463,7 +504,7 @@ export const GenerativeRadio = ({
     variationCounterRef.current = 0
     settingsRevisionRef.current += 1
     setActiveRecipe(null)
-  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile, steps, cfg, apg, seedInput, negativePrompt])
+  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile, steps, cfg, apg, seedInput, negativePrompt, phases])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -484,6 +525,24 @@ export const GenerativeRadio = ({
   }, [negativePrompt])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(RADIO_PHASES_STORAGE_KEY, JSON.stringify(phases))
+    } catch {
+      // Ignore storage errors
+    }
+  }, [phases])
+
+  useEffect(() => {
+    if (!tagModalOpen) return
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setTagModalOpen(false)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [tagModalOpen])
+
+  useEffect(() => {
     playbackPositionRef.current = position
   }, [position])
 
@@ -492,6 +551,7 @@ export const GenerativeRadio = ({
   const selectedAdapter = selectedModel ?? localModel
   latestGenerationSettingsRef.current = {
     keywords,
+    phases,
     bpm,
     drift,
     energy,
@@ -719,6 +779,7 @@ export const GenerativeRadio = ({
     setContinuationPreview(previewTrack)
     const request: RadioGenerationRequest = {
       keywords: recipe.keywords,
+      phases: recipe.phases,
       bpm: recipe.bpm,
       drift: recipe.drift,
       energy: recipe.energy,
@@ -795,7 +856,7 @@ export const GenerativeRadio = ({
         void prefetchContinuation(sourceTrack, sourceTrack.recipe, session)
       }
     }, 0)
-  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile])
+  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile, phases])
 
   function activateContinuation(track: RadioTrack): void {
     if (!track.audioUrl) return
@@ -851,6 +912,7 @@ export const GenerativeRadio = ({
     const variation = variationCounterRef.current
     const recipe = buildProceduralRecipe({
       keywords: keywords.trim(),
+      phases,
       bpm,
       drift,
       energy,
@@ -869,6 +931,7 @@ export const GenerativeRadio = ({
     setStatus('Stable Audio 3 compose un programme continu de plusieurs minutes…')
     const request: RadioGenerationRequest = {
       keywords: recipe.keywords,
+      phases: recipe.phases,
       bpm: recipe.bpm,
       drift: recipe.drift,
       energy: recipe.energy,
@@ -938,6 +1001,105 @@ export const GenerativeRadio = ({
     setPosition(nextPosition)
   }
 
+  const handleRemoveKeyword = (keywordToRemove: string): void => {
+    const updated = parseKeywords(keywords)
+      .filter((token) => token.toLowerCase() !== keywordToRemove.toLowerCase())
+      .join(', ')
+    setKeywords(updated)
+  }
+
+  const handleToggleTag = (tagLabel: string): void => {
+    const current = parseKeywords(keywords)
+    const exists = current.some((token) => token.toLowerCase() === tagLabel.toLowerCase())
+    if (exists) {
+      handleRemoveKeyword(tagLabel)
+    } else {
+      setKeywords(current.length > 0 ? `${keywords.trim().replace(/[, ]+$/, '')}, ${tagLabel}` : tagLabel)
+    }
+  }
+
+  const handleRemoveNegativeKeyword = (keywordToRemove: string): void => {
+    const updated = parseKeywords(negativePrompt)
+      .filter((token) => token.toLowerCase() !== keywordToRemove.toLowerCase())
+      .join(', ')
+    setNegativePrompt(updated)
+  }
+
+  const handleAddPhase = (phaseLabel: string): void => {
+    setPhases((prev) => [...prev, phaseLabel])
+  }
+
+  const handleRemovePhase = (indexToRemove: number): void => {
+    setPhases((prev) => prev.filter((_, idx) => idx !== indexToRemove))
+  }
+
+  const handleResetPhases = (): void => {
+    setPhases([...DEFAULT_PHASE_SEQUENCE])
+  }
+
+  const handleClearPhases = (): void => {
+    setPhases([])
+  }
+
+  const handlePhaseDragStart = (event: React.DragEvent<HTMLDivElement>, index: number): void => {
+    setDraggedPhaseIndex(index)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(index))
+  }
+
+  const handlePhaseDragOver = (event: React.DragEvent<HTMLDivElement>): void => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+  }
+
+  const handlePhaseDrop = (event: React.DragEvent<HTMLDivElement>, targetIndex: number): void => {
+    event.preventDefault()
+    const palettePhase = event.dataTransfer.getData('text/phase-palette')
+    if (palettePhase) {
+      setPhases((prev) => {
+        const next = [...prev]
+        next.splice(targetIndex, 0, palettePhase)
+        return next
+      })
+      setDraggedPhaseIndex(null)
+      return
+    }
+    if (draggedPhaseIndex === null || draggedPhaseIndex === targetIndex) {
+      setDraggedPhaseIndex(null)
+      return
+    }
+    setPhases((prev) => {
+      const updated = [...prev]
+      const [moved] = updated.splice(draggedPhaseIndex, 1)
+      if (moved) {
+        updated.splice(targetIndex, 0, moved)
+      }
+      return updated
+    })
+    setDraggedPhaseIndex(null)
+  }
+
+  const handlePhaseDragEnd = (): void => {
+    setDraggedPhaseIndex(null)
+  }
+
+  const filteredTags = useMemo(() => {
+    const query = modalSearch.trim().toLowerCase()
+    return STABLE_AUDIO_TAGS.filter((tag) => {
+      if (modalCategory !== 'all' && tag.category !== modalCategory) return false
+      if (!query) return true
+      return tag.label.toLowerCase().includes(query) || (tag.description && tag.description.toLowerCase().includes(query))
+    })
+  }, [modalCategory, modalSearch])
+
+  const filteredPhases = useMemo(() => {
+    const query = modalSearch.trim().toLowerCase()
+    return TRACK_PHASES.filter((phase) => {
+      if (!query) return true
+      return phase.label.toLowerCase().includes(query) || phase.description.toLowerCase().includes(query) || phase.shortCode.toLowerCase().includes(query)
+    })
+  }, [modalSearch])
+
   return <section className="radio-widget" aria-labelledby="radio-widget-heading" data-testid="generative-radio">
     <header className="radio-widget-topline">
       <div className="radio-live-label"><i aria-hidden="true" /> <span>GEN RADIO</span><small>FLUX VIVANT</small></div>
@@ -994,20 +1156,137 @@ export const GenerativeRadio = ({
         <div className="radio-keyword-field">
           <div className="radio-keyword-field-head">
             <label htmlFor="radio-keywords">Mots-clés</label>
-            {keywords !== defaultKeywords ? (
+            <div className="radio-keyword-head-actions">
               <button
                 type="button"
-                className="radio-keyword-reset-btn"
-                onClick={() => setKeywords(defaultKeywords)}
+                className="radio-catalog-btn"
+                onClick={() => setTagModalOpen(true)}
               >
-                Rétablir défaut
+                ＋ Catalogue des tags
               </button>
-            ) : null}
+              {keywords !== defaultKeywords ? (
+                <button
+                  type="button"
+                  className="radio-keyword-reset-btn"
+                  onClick={() => setKeywords(defaultKeywords)}
+                >
+                  Rétablir défaut
+                </button>
+              ) : null}
+            </div>
           </div>
           <small>Pool sans limite · virgules ou retours à la ligne · tirage différent à chaque génération</small>
           <textarea className="radio-keyword-textarea resize-none" ref={keywordsRef} id="radio-keywords" rows={3} value={keywords} onChange={(event) => { setKeywords(event.currentTarget.value); if (error) setError(null) }} placeholder="ambient pads, broken beat…" aria-describedby={error ? 'radio-error' : undefined} aria-invalid={Boolean(error)} />
         </div>
-        <div className="radio-keyword-chips" aria-label="Tags utilisés par la génération">{displayedTags.map((token) => <span key={token}>{token}</span>)}</div>
+        <div className="radio-keyword-chips" aria-label="Tags utilisés par la génération">
+          {displayedTags.map((token) => (
+            <span key={token} className="radio-keyword-chip">
+              <span>{token}</span>
+              <button
+                type="button"
+                className="radio-chip-remove"
+                onClick={() => handleRemoveKeyword(token)}
+                aria-label={`Retirer ${token}`}
+                title={`Retirer ${token}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+
+        <div className="radio-timeline-phases-panel" data-testid="radio-timeline-phases-panel">
+          <div className="radio-phases-header">
+            <div className="radio-phases-heading">
+              <span className="radio-eyebrow">STRUCTURE & PROGRESSION</span>
+              <h4>Frise chronologique des phases</h4>
+              <small>Glisse-dépose les phases pour ordonner la composition du morceau</small>
+            </div>
+            <div className="radio-phases-actions">
+              {phases.length > 0 && (
+                <button type="button" className="radio-keyword-reset-btn" onClick={handleClearPhases}>
+                  Vider
+                </button>
+              )}
+              <button type="button" className="radio-keyword-reset-btn" onClick={handleResetPhases}>
+                Frise par défaut
+              </button>
+            </div>
+          </div>
+
+          <div
+            className="radio-chronological-track"
+            onDragOver={handlePhaseDragOver}
+            onDrop={(e) => {
+              const palettePhase = e.dataTransfer.getData('text/phase-palette')
+              if (palettePhase) {
+                handleAddPhase(palettePhase)
+              }
+            }}
+            aria-label="Séquence chronologique des phases"
+          >
+            {phases.length === 0 ? (
+              <div className="radio-phases-empty-hint">
+                Frise vide · clique sur les phases ci-dessous ou sur « Frise par défaut » pour structurer le morceau
+              </div>
+            ) : (
+              phases.map((phaseLabel, index) => {
+                const phaseMeta = TRACK_PHASES.find((p) => p.label.toLowerCase() === phaseLabel.toLowerCase())
+                return (
+                  <div
+                    key={`${phaseLabel}-${index}`}
+                    className={`radio-phase-step ${draggedPhaseIndex === index ? 'is-dragging' : ''}`}
+                    draggable
+                    onDragStart={(e) => handlePhaseDragStart(e, index)}
+                    onDragOver={handlePhaseDragOver}
+                    onDrop={(e) => handlePhaseDrop(e, index)}
+                    onDragEnd={handlePhaseDragEnd}
+                    title={phaseMeta?.description ?? phaseLabel}
+                  >
+                    <span className="radio-phase-index">{String(index + 1).padStart(2, '0')}</span>
+                    <div className="radio-phase-step-body">
+                      <strong className="radio-phase-step-name">{phaseLabel}</strong>
+                      <small className="radio-phase-step-energy">{phaseMeta ? `⚡ ${phaseMeta.defaultEnergy}%` : ''}</small>
+                    </div>
+                    <button
+                      type="button"
+                      className="radio-phase-remove-btn"
+                      onClick={() => handleRemovePhase(index)}
+                      aria-label={`Retirer la phase ${phaseLabel} en position ${index + 1}`}
+                      title={`Retirer ${phaseLabel}`}
+                    >
+                      ×
+                    </button>
+                    {index < phases.length - 1 && <span className="radio-phase-connector" aria-hidden="true">→</span>}
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          <div className="radio-phases-palette">
+            <span className="radio-phases-palette-label">＋ Ajouter :</span>
+            <div className="radio-phases-palette-items">
+              {TRACK_PHASES.map((phase) => (
+                <button
+                  key={phase.id}
+                  type="button"
+                  className="radio-phase-add-chip"
+                  aria-label={`Ajouter ${phase.label}`}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/phase-palette', phase.label)
+                  }}
+                  onClick={() => handleAddPhase(phase.label)}
+                  title={phase.description}
+                >
+                  <span className="radio-phase-chip-code">{phase.shortCode}</span>
+                  <span className="radio-phase-chip-name">{phase.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
         <div className="radio-procedural-panel" data-testid="radio-procedural-panel">
           <div className="radio-procedural-toggle">
@@ -1090,7 +1369,18 @@ export const GenerativeRadio = ({
           </div>
           <div className="radio-keyword-chips is-negative" aria-label="Tags exclus de la génération">
             {negativePromptTokens.map((token) => (
-              <span key={token}>{token}</span>
+              <span key={token} className="radio-keyword-chip">
+                <span>{token}</span>
+                <button
+                  type="button"
+                  className="radio-chip-remove"
+                  onClick={() => handleRemoveNegativeKeyword(token)}
+                  aria-label={`Retirer le tag exclu ${token}`}
+                  title={`Retirer ${token}`}
+                >
+                  ×
+                </button>
+              </span>
             ))}
           </div>
         </details>
@@ -1111,5 +1401,161 @@ export const GenerativeRadio = ({
         {nextQueueTrack ? <RadioTrackCard track={nextQueueTrack} slot="next" statusLabel={continuationTrack ? 'READY / PRÊT' : continuationGenerating ? `BUILDING / ${generationProgress}%` : 'WAITING / ATTENTE'} building={continuationGenerating} /> : <div className="radio-queue-row is-next is-empty" data-testid="next-radio-track" aria-label="Prochain morceau"><div className="radio-queue-track-heading"><span>02 · UP NEXT</span><b>WAITING / ATTENTE</b></div><strong className="radio-queue-title">Prochain morceau en attente</strong><small>Les paramètres complets apparaîtront dès le lancement de sa préparation.</small></div>}
       </> : <div className="radio-queue-empty">Aucun flux dans le lecteur · importe ton SFT puis lance la composition.</div>}
     </div>
+
+    {tagModalOpen && (
+      <div
+        className="radio-modal-backdrop"
+        onClick={() => setTagModalOpen(false)}
+        role="presentation"
+        data-testid="radio-tag-modal-backdrop"
+      >
+        <div
+          className="radio-modal-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="radio-modal-title"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="radio-modal-header">
+            <div>
+              <span className="radio-eyebrow">STABLE AUDIO 3 · DICTIONNAIRE DE TAGS</span>
+              <h3 id="radio-modal-title">Catalogue de tags & structure</h3>
+              <p>Clique sur un tag pour l’ajouter/retirer de tes mots-clés ou phases</p>
+            </div>
+            <button
+              type="button"
+              className="radio-modal-close"
+              onClick={() => setTagModalOpen(false)}
+              aria-label="Fermer le catalogue"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="radio-modal-controls">
+            <input
+              type="search"
+              className="radio-modal-search"
+              placeholder="Filtrer les tags (ex: techno, kick, drone, acid, reverb…)"
+              value={modalSearch}
+              onChange={(e) => setModalSearch(e.currentTarget.value)}
+              autoFocus
+            />
+            <div className="radio-modal-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={modalCategory === 'all'}
+                className={`radio-modal-tab ${modalCategory === 'all' ? 'is-active' : ''}`}
+                onClick={() => setModalCategory('all')}
+              >
+                Tous ({STABLE_AUDIO_TAGS.length + TRACK_PHASES.length})
+              </button>
+              {(Object.keys(CATEGORY_LABELS) as TagCategory[]).map((cat) => {
+                const count = cat === 'phases'
+                  ? TRACK_PHASES.length
+                  : STABLE_AUDIO_TAGS.filter((t) => t.category === cat).length
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    role="tab"
+                    aria-selected={modalCategory === cat}
+                    className={`radio-modal-tab ${modalCategory === cat ? 'is-active' : ''}`}
+                    onClick={() => setModalCategory(cat)}
+                  >
+                    {CATEGORY_LABELS[cat]} ({count})
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="radio-modal-body">
+            {(modalCategory === 'all' || modalCategory === 'phases') && (
+              <div className="radio-modal-section">
+                <div className="radio-modal-section-title">
+                  <span>Phases de structure</span>
+                  <small>Clique pour ajouter à la frise chronologique</small>
+                </div>
+                <div className="radio-modal-phase-grid">
+                  {filteredPhases.map((phase) => {
+                    const countInPhases = phases.filter((p) => p.toLowerCase() === phase.label.toLowerCase()).length
+                    return (
+                      <button
+                        key={phase.id}
+                        type="button"
+                        className={`radio-modal-phase-card ${countInPhases > 0 ? 'is-in-timeline' : ''}`}
+                        onClick={() => handleAddPhase(phase.label)}
+                      >
+                        <div className="radio-modal-phase-top">
+                          <span className="radio-modal-phase-code">{phase.shortCode}</span>
+                          <strong className="radio-modal-phase-name">{phase.label}</strong>
+                          <span className="radio-modal-phase-energy">⚡ {phase.defaultEnergy}%</span>
+                        </div>
+                        <p className="radio-modal-phase-desc">{phase.description}</p>
+                        <div className="radio-modal-phase-action">
+                          {countInPhases > 0 ? `Présente (${countInPhases}×) · ＋ Ajouter encore` : '＋ Ajouter à la frise'}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {(modalCategory === 'all' || modalCategory !== 'phases') && (
+              <div className="radio-modal-section">
+                {modalCategory === 'all' && <div className="radio-modal-section-title"><span>Tags sonores & textures</span></div>}
+                <div className="radio-modal-tag-grid">
+                  {filteredTags.map((tag) => {
+                    const isSelected = keywordTokens.some(
+                      (token) => token.toLowerCase() === tag.label.toLowerCase(),
+                    )
+                    return (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        className={`radio-modal-tag-item ${isSelected ? 'is-selected' : ''}`}
+                        onClick={() => handleToggleTag(tag.label)}
+                        aria-pressed={isSelected}
+                      >
+                        <div className="radio-modal-tag-head">
+                          <span className="radio-modal-tag-category">{CATEGORY_LABELS[tag.category]}</span>
+                          <span className="radio-modal-tag-status">{isSelected ? '✓ ACTIF' : '＋'}</span>
+                        </div>
+                        <strong className="radio-modal-tag-label">{tag.label}</strong>
+                        {tag.description && <small className="radio-modal-tag-desc">{tag.description}</small>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {filteredTags.length === 0 && (modalCategory !== 'phases' && filteredPhases.length === 0) && (
+              <div className="radio-modal-empty">
+                Aucun tag trouvé pour « {modalSearch} ».
+              </div>
+            )}
+          </div>
+
+          <div className="radio-modal-footer">
+            <div className="radio-modal-footer-stats">
+              <span><b>{keywordTokens.length}</b> tags actifs</span>
+              <span>·</span>
+              <span><b>{phases.length}</b> phases dans la frise</span>
+            </div>
+            <button
+              type="button"
+              className="radio-modal-done-btn"
+              onClick={() => setTagModalOpen(false)}
+            >
+              Valider & fermer
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </section>
 }
