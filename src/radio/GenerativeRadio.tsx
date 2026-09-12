@@ -15,6 +15,7 @@ import {
   CATEGORY_LABELS,
   DEFAULT_PHASE_SEQUENCE,
   formatPhasesPrompt,
+  getTagCategory,
   STABLE_AUDIO_TAGS,
   TRACK_PHASES,
   type TagCategory,
@@ -1179,20 +1180,23 @@ export const GenerativeRadio = ({
           <textarea className="radio-keyword-textarea resize-none" ref={keywordsRef} id="radio-keywords" rows={3} value={keywords} onChange={(event) => { setKeywords(event.currentTarget.value); if (error) setError(null) }} placeholder="ambient pads, broken beat…" aria-describedby={error ? 'radio-error' : undefined} aria-invalid={Boolean(error)} />
         </div>
         <div className="radio-keyword-chips" aria-label="Tags utilisés par la génération">
-          {displayedTags.map((token) => (
-            <span key={token} className="radio-keyword-chip">
-              <span>{token}</span>
-              <button
-                type="button"
-                className="radio-chip-remove"
-                onClick={() => handleRemoveKeyword(token)}
-                aria-label={`Retirer ${token}`}
-                title={`Retirer ${token}`}
-              >
-                ×
-              </button>
-            </span>
-          ))}
+          {displayedTags.map((token) => {
+            const category = getTagCategory(token)
+            return (
+              <span key={token} className={`radio-keyword-chip is-${category}`}>
+                <span>{token}</span>
+                <button
+                  type="button"
+                  className="radio-chip-remove"
+                  onClick={() => handleRemoveKeyword(token)}
+                  aria-label={`Retirer ${token}`}
+                  title={`Retirer ${token}`}
+                >
+                  ×
+                </button>
+              </span>
+            )
+          })}
         </div>
 
         <div className="radio-timeline-phases-panel" data-testid="radio-timeline-phases-panel">

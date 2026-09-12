@@ -183,3 +183,28 @@ export const formatPhasesPrompt = (phases: readonly string[]): string => {
   if (!phases || phases.length === 0) return ''
   return `arrangement: ${phases.join(' -> ')}`
 }
+
+export const getTagCategory = (tagText: string): TagCategory | 'custom' => {
+  const normalized = tagText.trim().toLowerCase()
+  if (!normalized) return 'custom'
+
+  const foundTag = STABLE_AUDIO_TAGS.find(
+    (t) => t.label.toLowerCase() === normalized || t.id.toLowerCase() === normalized,
+  )
+  if (foundTag) return foundTag.category
+
+  const foundPhase = TRACK_PHASES.find(
+    (p) => p.label.toLowerCase() === normalized || p.shortCode.toLowerCase() === normalized || p.id.toLowerCase() === normalized,
+  )
+  if (foundPhase) return 'phases'
+
+  // Keyword heuristic matching for user free-form tags
+  if (/(techno|house|ambient|electro|dnb|drum & bass|jungle|breakbeat|idm|synthwave|darkwave|cyberpunk|downtempo|trance|disco|dub|rock|metal|garage)/i.test(normalized)) return 'style'
+  if (/(bass|synth|lead|pad|string|pluck|drone|fm|303|808|modular|vocal|guitar|piano|organ|horn|flute|brass)/i.test(normalized)) return 'instruments'
+  if (/(kick|hat|snare|clap|percussion|drum|groove|beat|shaker|tom|polyrhythm|syncopated|rimshot|roll)/i.test(normalized)) return 'rhythm'
+  if (/(dark|hypnotic|driving|submerged|raw|warehouse|nocturnal|ethereal|euphoric|mood|vibe|chill|deep|aggressive|tension)/i.test(normalized)) return 'mood'
+  if (/(saturation|tape|analog|reverb|delay|mix|sub|compression|stereo|sidechain|clean|mastering|spatial|warmth|filtering)/i.test(normalized)) return 'production'
+
+  return 'custom'
+}
+

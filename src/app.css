@@ -184,6 +184,20 @@ button, select, input { font: inherit; }
 .radio-keyword-chips span,
 .radio-keyword-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; overflow: hidden; padding: 3px 6px; border: 1px solid rgba(110, 233, 220, .3); border-radius: 4px; color: var(--radio-cyan); background: rgba(110, 233, 220, .05); font-size: .45rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; transition: border-color 140ms ease, background 140ms ease; }
 .radio-keyword-chip:hover { border-color: rgba(110, 233, 220, .6); }
+.radio-keyword-chip.is-style { border-color: rgba(110, 233, 220, .4); color: #6ee9dc; background: rgba(110, 233, 220, .08); }
+.radio-keyword-chip.is-style:hover { border-color: #6ee9dc; background: rgba(110, 233, 220, .16); }
+.radio-keyword-chip.is-instruments { border-color: rgba(255, 202, 88, .4); color: #ffca58; background: rgba(255, 202, 88, .08); }
+.radio-keyword-chip.is-instruments:hover { border-color: #ffca58; background: rgba(255, 202, 88, .16); }
+.radio-keyword-chip.is-rhythm { border-color: rgba(255, 128, 109, .4); color: #ff806d; background: rgba(255, 128, 109, .08); }
+.radio-keyword-chip.is-rhythm:hover { border-color: #ff806d; background: rgba(255, 128, 109, .16); }
+.radio-keyword-chip.is-mood { border-color: rgba(192, 132, 252, .4); color: #c084fc; background: rgba(192, 132, 252, .08); }
+.radio-keyword-chip.is-mood:hover { border-color: #c084fc; background: rgba(192, 132, 252, .16); }
+.radio-keyword-chip.is-production { border-color: rgba(213, 255, 70, .4); color: #d5ff46; background: rgba(213, 255, 70, .08); }
+.radio-keyword-chip.is-production:hover { border-color: #d5ff46; background: rgba(213, 255, 70, .16); }
+.radio-keyword-chip.is-phases { border-color: rgba(96, 165, 250, .4); color: #60a5fa; background: rgba(96, 165, 250, .08); }
+.radio-keyword-chip.is-phases:hover { border-color: #60a5fa; background: rgba(96, 165, 250, .16); }
+.radio-keyword-chip.is-custom { border-color: rgba(184, 207, 194, .35); color: #b8cfc2; background: rgba(184, 207, 194, .06); }
+.radio-keyword-chip.is-custom:hover { border-color: #b8cfc2; background: rgba(184, 207, 194, .14); }
 .radio-keyword-chips.is-negative span,
 .radio-keyword-chips.is-negative .radio-keyword-chip { border-color: rgba(255, 128, 109, .32); color: var(--radio-coral); background: rgba(255, 128, 109, .06); }
 .radio-keyword-chips.is-negative .radio-keyword-chip:hover { border-color: rgba(255, 128, 109, .6); }
