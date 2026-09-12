@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { GenerativeRadio, RADIO_KEYWORDS_STORAGE_KEY } from './GenerativeRadio'
+import { GenerativeRadio, RADIO_KEYWORDS_STORAGE_KEY, RADIO_FIXED_TAGS_STORAGE_KEY } from './GenerativeRadio'
 
 describe('GenerativeRadio', () => {
   beforeEach(() => {
@@ -503,5 +503,58 @@ describe('GenerativeRadio', () => {
     expect(sentRequest.keywords).toContain('arrangement:')
     expect(sentRequest.phases).toBeDefined()
     expect(sentRequest.phases).toContain('Drop')
+  })
+
+  it('renders fixed tags panel with dropzone and supports drag-and-drop and persistence', async () => {
+    const onGenerate = vi.fn().mockResolvedValue({ audioUrl: 'blob:audio', id: 'gen-fixed', durationSeconds: 240 })
+    const selectedModel = {
+      id: 'f'.repeat(32),
+      filename: 'fixed.safetensors',
+      size_bytes: 1024,
+      created_at: '2026-09-10T00:00:00',
+      format: 'safetensors' as const,
+      base_model: 'stable-audio-3-medium-mlx',
+    }
+
+    const { unmount } = render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+
+    expect(screen.getByTestId('radio-fixed-tags-panel')).toBeInTheDocument()
+    const dropzone = screen.getByTestId('radio-fixed-tags-dropzone')
+    expect(dropzone).toHaveTextContent(/Glisse tes tags ici/i)
+    expect(screen.getByText('0 FIXE')).toBeInTheDocument()
+
+    // Simulate drop of a tag into the fixed dropzone
+    const dataTransfer = {
+      data: { 'text/tag': 'analog modular', 'text/plain': 'analog modular' } as Record<string, string>,
+      getData: (type: string) => dataTransfer.data[type] || '',
+      setData: (type: string, val: string) => { dataTransfer.data[type] = val },
+    }
+    fireEvent.dragOver(dropzone)
+    fireEvent.drop(dropzone, { dataTransfer })
+
+    expect(screen.getByText('analog modular')).toBeInTheDocument()
+    expect(screen.getByText('1 FIXE')).toBeInTheDocument()
+
+    // Verify localStorage persistence
+    expect(window.localStorage.getItem(RADIO_FIXED_TAGS_STORAGE_KEY)).toContain('analog modular')
+
+    // Generate and verify fixed tag is always in request
+    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    await waitFor(() => expect(onGenerate).toHaveBeenCalled())
+    const sent = onGenerate.mock.calls[0]![0] as { keywords: string; fixedTags?: string[] }
+    expect(sent.keywords).toContain('analog modular')
+    expect(sent.fixedTags).toContain('analog modular')
+
+    // Test unmount and restore from localStorage
+    unmount()
+    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+    expect(screen.getByText('analog modular')).toBeInTheDocument()
+    expect(screen.getByText('1 FIXE')).toBeInTheDocument()
+
+    // Remove fixed tag using its cross
+    const removeBtn = screen.getByRole('button', { name: 'Retirer analog modular des tags fixes' })
+    fireEvent.click(removeBtn)
+    expect(screen.queryByText('analog modular')).not.toBeInTheDocument()
+    expect(screen.getByText('0 FIXE')).toBeInTheDocument()
   })
 })

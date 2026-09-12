@@ -41,6 +41,7 @@ export type RadioGenerationRequest = {
   apg?: number
   negativePrompt?: string
   phases?: string[]
+  fixedTags?: string[]
   // Backend lineage only: no audio from the previous track is reused.
   continuationFromId?: string | null
 }
@@ -71,6 +72,7 @@ type RadioRecipe = {
   keywords: string
   tags: string[]
   keywordPool: string[]
+  fixedTags?: string[]
   phases?: string[]
   bpm: number
   drift: number
@@ -102,6 +104,7 @@ const defaultApg = 1.0
 export const RADIO_KEYWORDS_STORAGE_KEY = 'onus-generative-radio-keywords'
 export const RADIO_NEGATIVE_PROMPT_STORAGE_KEY = 'onus-generative-radio-negative-prompt'
 export const RADIO_PHASES_STORAGE_KEY = 'onus-generative-radio-phases'
+export const RADIO_FIXED_TAGS_STORAGE_KEY = 'onus-generative-radio-fixed-tags'
 
 const initialKeywords = (): string => {
   if (typeof window === 'undefined') return defaultKeywords
@@ -130,6 +133,20 @@ const initialPhases = (): string[] => {
     if (stored) {
       const parsed = JSON.parse(stored)
       if (Array.isArray(parsed)) return parsed
+    }
+    return []
+  } catch {
+    return []
+  }
+}
+
+const initialFixedTags = (): string[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const stored = window.localStorage.getItem(RADIO_FIXED_TAGS_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
     }
     return []
   } catch {
@@ -255,12 +272,16 @@ const pickGenerationTags = (pool: readonly string[], seed: number): string[] => 
 
 const buildProceduralRecipe = (input: RadioGenerationSettings, variation: number, enabled: boolean): RadioRecipe => {
   const keywordPool = parseKeywords(input.keywords)
-  const normalizedKeywords = keywordPool.join(', ')
+  const fixedTags = (input.fixedTags ?? []).map((t) => t.trim()).filter(Boolean)
+  const fixedLower = new Set(fixedTags.map((t) => t.toLowerCase()))
+  const variablePool = keywordPool.filter((t) => !fixedLower.has(t.toLowerCase()))
+  const normalizedKeywords = Array.from(new Set([...fixedTags, ...keywordPool])).join(', ')
   const autoSeed = hashString(`${normalizedKeywords}:${variation}`) % 2_147_483_647
   const seed = typeof input.customSeed === 'number' && Number.isFinite(input.customSeed)
     ? input.customSeed
     : autoSeed
-  const tags = enabled ? pickGenerationTags(keywordPool, seed) : [...keywordPool]
+  const variableTags = enabled ? pickGenerationTags(variablePool, seed) : [...variablePool]
+  const tags = Array.from(new Set([...fixedTags, ...variableTags]))
   const phases = input.phases ?? []
   const phasesSuffix = phases.length > 0 ? formatPhasesPrompt(phases) : ''
   const generatedKeywords = [tags.join(', '), phasesSuffix].filter(Boolean).join(' · ')
@@ -269,6 +290,7 @@ const buildProceduralRecipe = (input: RadioGenerationSettings, variation: number
     keywords: generatedKeywords,
     tags,
     keywordPool,
+    fixedTags,
     phases,
     seed,
     steps: input.steps ?? defaultSteps,
@@ -359,6 +381,7 @@ const buildContinuationRecipe = (
   latestSettings?: RadioGenerationSettings,
 ): RadioRecipe => buildProceduralRecipe(latestSettings ?? {
   keywords: sourceRecipe.keywordPool.join(', '),
+  fixedTags: sourceRecipe.fixedTags,
   phases: sourceRecipe.phases,
   bpm: sourceRecipe.bpm,
   drift: sourceRecipe.drift,
@@ -422,6 +445,8 @@ const defaultRadioDspMeter: RadioDspMeter = { inputPeakDb: -60, outputPeakDb: -6
 type GenerativeRadioProps = {
   availableModels?: readonly StableAudioRadioAdapter[]
   availableModelVariants?: readonly StableAudioRadioModelVariant[]
+  initialFixedTags?: readonly string[]
+  initialPhases?: readonly string[]
   onClearModel?: () => void
   onGenerate?: (request: RadioGenerationRequest, onProgress?: (progress: number) => void) => Promise<RadioGenerationResult | void>
   onImportModel?: (file: File) => Promise<StableAudioRadioAdapter | void>
@@ -433,6 +458,8 @@ type GenerativeRadioProps = {
 export const GenerativeRadio = ({
   availableModels = [],
   availableModelVariants = [],
+  initialFixedTags: initialFixedTagsProp,
+  initialPhases: initialPhasesProp,
   onClearModel,
   onGenerate,
   onImportModel,
@@ -441,7 +468,16 @@ export const GenerativeRadio = ({
   selectedModel,
 }: GenerativeRadioProps): ReactElement => {
   const [keywords, setKeywords] = useState(initialKeywords)
-  const [phases, setPhases] = useState<string[]>(initialPhases)
+  const [phases, setPhases] = useState<string[]>(() => {
+    if (initialPhasesProp && initialPhasesProp.length > 0) return [...initialPhasesProp]
+    return initialPhases()
+  })
+  const [fixedTags, setFixedTags] = useState<string[]>(() => {
+    if (initialFixedTagsProp && initialFixedTagsProp.length > 0) return [...initialFixedTagsProp]
+    return initialFixedTags()
+  })
+  const [draggedFixedTagIndex, setDraggedFixedTagIndex] = useState<number | null>(null)
+  const [isFixedDragOver, setIsFixedDragOver] = useState(false)
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [modalCategory, setModalCategory] = useState<TagCategory | 'all'>('all')
   const [modalSearch, setModalSearch] = useState('')
@@ -505,7 +541,7 @@ export const GenerativeRadio = ({
     variationCounterRef.current = 0
     settingsRevisionRef.current += 1
     setActiveRecipe(null)
-  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile, steps, cfg, apg, seedInput, negativePrompt, phases])
+  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile, steps, cfg, apg, seedInput, negativePrompt, phases, fixedTags])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -535,6 +571,15 @@ export const GenerativeRadio = ({
   }, [phases])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(RADIO_FIXED_TAGS_STORAGE_KEY, JSON.stringify(fixedTags))
+    } catch {
+      // Ignore storage errors
+    }
+  }, [fixedTags])
+
+  useEffect(() => {
     if (!tagModalOpen) return
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') setTagModalOpen(false)
@@ -552,6 +597,7 @@ export const GenerativeRadio = ({
   const selectedAdapter = selectedModel ?? localModel
   latestGenerationSettingsRef.current = {
     keywords,
+    fixedTags,
     phases,
     bpm,
     drift,
@@ -741,8 +787,8 @@ export const GenerativeRadio = ({
   }
 
   const togglePlayback = async (): Promise<void> => {
-    if (!keywords.trim()) {
-      setError('Ajoute au moins un mot-clé pour lancer la radio.')
+    if (!keywords.trim() && fixedTags.length === 0) {
+      setError('Ajoute au moins un mot-clé ou un tag fixe pour lancer la radio.')
       keywordsRef.current?.focus()
       return
     }
@@ -768,7 +814,7 @@ export const GenerativeRadio = ({
   async function prefetchContinuation(sourceTrack: RadioTrack, sourceRecipe: RadioRecipe, session: number): Promise<void> {
     if (continuationGeneratingRef.current || continuationTrackRef.current || !onGenerate || typeof sourceTrack.id !== 'string') return
     const latestSettings = latestGenerationSettingsRef.current
-    if (!latestSettings?.keywords.trim()) return
+    if (!latestSettings?.keywords.trim() && (!latestSettings?.fixedTags || latestSettings.fixedTags.length === 0)) return
     const requestRevision = settingsRevisionRef.current
 
     continuationGeneratingRef.current = true
@@ -781,6 +827,7 @@ export const GenerativeRadio = ({
     const request: RadioGenerationRequest = {
       keywords: recipe.keywords,
       phases: recipe.phases,
+      fixedTags: recipe.fixedTags,
       bpm: recipe.bpm,
       drift: recipe.drift,
       energy: recipe.energy,
@@ -812,31 +859,22 @@ export const GenerativeRadio = ({
         return
       }
       completedTrack = trackFromResult(result, recipe, variation, 'independent')
-      releaseTrackAudio(continuationTrackRef.current)
       continuationTrackRef.current = completedTrack
-      setContinuationPreview(null)
       setContinuationTrack(completedTrack)
-      variationCounterRef.current = variation + 1
-      setGenerationProgress(100)
-      setStatus('Morceau indépendant prêt en avance · le flux gardera la même évolution.')
+      setContinuationPreview(null)
+      setStatus('Morceau indépendant prêt · transition continue armée.')
     } catch {
-      staleSettings = requestRevision !== settingsRevisionRef.current
-      if (!staleSettings && session === programSessionRef.current) setStatus('Programme actif · le morceau indépendant doit être recalculé.')
-    } finally {
-      continuationGeneratingRef.current = false
-      if (session !== programSessionRef.current) return
-      setContinuationGenerating(false)
-      if (staleSettings) {
+      if (session === programSessionRef.current && !staleSettings) {
+        setContinuationTrack(null)
         setContinuationPreview(null)
-        window.setTimeout(() => {
-          if (session === programSessionRef.current && !continuationTrackRef.current) {
-            void prefetchContinuation(sourceTrack, sourceRecipe, session)
-          }
-        }, 0)
-        return
+        setStatus('Morceau indépendant indisponible · la lecture reste continue.')
       }
-      if (!completedTrack) setContinuationPreview(previewTrack)
-      if (completedTrack && playbackEndedRef.current && continuationTrackRef.current?.id === completedTrack.id) activateContinuation(completedTrack)
+    } finally {
+      if (session === programSessionRef.current) {
+        continuationGeneratingRef.current = false
+        setContinuationGenerating(false)
+        setGenerationProgress(0)
+      }
     }
   }
 
@@ -875,8 +913,8 @@ export const GenerativeRadio = ({
 
   const generateNext = async (autoplay = false): Promise<void> => {
     if (generating || continuationGeneratingRef.current) return
-    if (!keywords.trim()) {
-      setError('Ajoute au moins un mot-clé avant de générer le programme.')
+    if (!keywords.trim() && fixedTags.length === 0) {
+      setError('Ajoute au moins un mot-clé ou un tag fixe avant de générer le programme.')
       keywordsRef.current?.focus()
       return
     }
@@ -913,6 +951,7 @@ export const GenerativeRadio = ({
     const variation = variationCounterRef.current
     const recipe = buildProceduralRecipe({
       keywords: keywords.trim(),
+      fixedTags,
       phases,
       bpm,
       drift,
@@ -933,6 +972,7 @@ export const GenerativeRadio = ({
     const request: RadioGenerationRequest = {
       keywords: recipe.keywords,
       phases: recipe.phases,
+      fixedTags: recipe.fixedTags,
       bpm: recipe.bpm,
       drift: recipe.drift,
       energy: recipe.energy,
@@ -1009,6 +1049,107 @@ export const GenerativeRadio = ({
     setKeywords(updated)
   }
 
+  const handleKeywordChipDragStart = (event: React.DragEvent<HTMLElement>, token: string): void => {
+    event.dataTransfer.effectAllowed = 'copyMove'
+    event.dataTransfer.setData('text/tag', token)
+    event.dataTransfer.setData('text/plain', token)
+  }
+
+  const handleFixedTagDragStart = (event: React.DragEvent<HTMLElement>, index: number, tag: string): void => {
+    setDraggedFixedTagIndex(index)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/fixed-tag-index', String(index))
+    event.dataTransfer.setData('text/tag', tag)
+    event.dataTransfer.setData('text/plain', tag)
+  }
+
+  const handleFixedTagDragOver = (event: React.DragEvent<HTMLElement>): void => {
+    event.preventDefault()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+    setIsFixedDragOver(true)
+  }
+
+  const handleFixedTagDragLeave = (event: React.DragEvent<HTMLElement>): void => {
+    if (event.currentTarget.contains(event.relatedTarget as Node)) return
+    setIsFixedDragOver(false)
+  }
+
+  const handleFixedTagDrop = (event: React.DragEvent<HTMLElement>, targetIndex?: number): void => {
+    event.preventDefault()
+    event.stopPropagation()
+    setIsFixedDragOver(false)
+
+    if (!event.dataTransfer) {
+      setDraggedFixedTagIndex(null)
+      return
+    }
+
+    const fixedIndexStr = event.dataTransfer.getData('text/fixed-tag-index')
+    if (fixedIndexStr !== '') {
+      const fromIndex = parseInt(fixedIndexStr, 10)
+      if (!Number.isNaN(fromIndex)) {
+        if (targetIndex !== undefined && fromIndex !== targetIndex) {
+          setFixedTags((prev) => {
+            const updated = [...prev]
+            const [moved] = updated.splice(fromIndex, 1)
+            if (moved) {
+              updated.splice(targetIndex, 0, moved)
+            }
+            return updated
+          })
+        }
+        setDraggedFixedTagIndex(null)
+        return
+      }
+    }
+
+    const tagData = event.dataTransfer.getData('text/tag') || event.dataTransfer.getData('text/plain')
+    if (!tagData) {
+      setDraggedFixedTagIndex(null)
+      return
+    }
+    const newTag = tagData.trim()
+    if (!newTag) {
+      setDraggedFixedTagIndex(null)
+      return
+    }
+
+    setFixedTags((prev) => {
+      const exists = prev.some((t) => t.toLowerCase() === newTag.toLowerCase())
+      if (exists) return prev
+      if (targetIndex !== undefined) {
+        const next = [...prev]
+        next.splice(targetIndex, 0, newTag)
+        return next
+      }
+      return [...prev, newTag]
+    })
+    setDraggedFixedTagIndex(null)
+  }
+
+  const handleFixedTagDragEnd = (): void => {
+    setDraggedFixedTagIndex(null)
+    setIsFixedDragOver(false)
+  }
+
+  const handleRemoveFixedTag = (indexToRemove: number): void => {
+    setFixedTags((prev) => prev.filter((_, idx) => idx !== indexToRemove))
+  }
+
+  const handleClearFixedTags = (): void => {
+    setFixedTags([])
+  }
+
+  const handleToggleFixedTag = (tagLabel: string): void => {
+    setFixedTags((prev) => {
+      const exists = prev.some((t) => t.toLowerCase() === tagLabel.toLowerCase())
+      if (exists) {
+        return prev.filter((t) => t.toLowerCase() !== tagLabel.toLowerCase())
+      }
+      return [...prev, tagLabel]
+    })
+  }
+
   const handleToggleTag = (tagLabel: string): void => {
     const current = parseKeywords(keywords)
     const exists = current.some((token) => token.toLowerCase() === tagLabel.toLowerCase())
@@ -1050,11 +1191,15 @@ export const GenerativeRadio = ({
 
   const handlePhaseDragOver = (event: React.DragEvent<HTMLDivElement>): void => {
     event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
   }
 
   const handlePhaseDrop = (event: React.DragEvent<HTMLDivElement>, targetIndex: number): void => {
     event.preventDefault()
+    if (!event.dataTransfer) {
+      setDraggedPhaseIndex(null)
+      return
+    }
     const palettePhase = event.dataTransfer.getData('text/phase-palette')
     if (palettePhase) {
       setPhases((prev) => {
@@ -1182,9 +1327,17 @@ export const GenerativeRadio = ({
         <div className="radio-keyword-chips" aria-label="Tags utilisés par la génération">
           {displayedTags.map((token) => {
             const category = getTagCategory(token)
+            const isFixed = fixedTags.some((f) => f.toLowerCase() === token.toLowerCase())
             return (
-              <span key={token} className={`radio-keyword-chip is-${category}`}>
+              <span
+                key={token}
+                className={`radio-keyword-chip is-${category} ${isFixed ? 'is-already-fixed' : ''}`}
+                draggable
+                onDragStart={(e) => handleKeywordChipDragStart(e, token)}
+                title={isFixed ? 'Déjà dans les tags fixes' : 'Glisse vers la zone de tags fixes pour le verrouiller'}
+              >
                 <span>{token}</span>
+                {isFixed && <span className="radio-chip-pin-indicator" title="Verrouillé dans les tags fixes">📌</span>}
                 <button
                   type="button"
                   className="radio-chip-remove"
@@ -1197,6 +1350,87 @@ export const GenerativeRadio = ({
               </span>
             )
           })}
+        </div>
+
+        {/* Zone de tags fixes */}
+        <div className="radio-fixed-tags-panel" data-testid="radio-fixed-tags-panel">
+          <div className="radio-fixed-tags-header">
+            <div className="radio-fixed-tags-heading">
+              <div className="radio-fixed-tags-title-row">
+                <span className="radio-eyebrow">TAGS PERMANENTS</span>
+                <span className="radio-fixed-tags-count">{fixedTags.length} FIXE{fixedTags.length > 1 ? 'S' : ''}</span>
+              </div>
+              <h4>Zone de tags fixes</h4>
+              <small>Glisse tes tags ici pour qu’ils soient systématiquement sélectionnés à chaque morceau</small>
+            </div>
+            {fixedTags.length > 0 && (
+              <div className="radio-fixed-tags-actions">
+                <button
+                  type="button"
+                  className="radio-keyword-reset-btn"
+                  onClick={handleClearFixedTags}
+                  title="Retirer tous les tags fixes"
+                >
+                  Vider
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div
+            className={`radio-fixed-tags-dropzone ${isFixedDragOver ? 'is-drag-over' : ''} ${fixedTags.length === 0 ? 'is-empty' : ''}`}
+            onDragOver={handleFixedTagDragOver}
+            onDragLeave={handleFixedTagDragLeave}
+            onDrop={(e) => handleFixedTagDrop(e)}
+            data-testid="radio-fixed-tags-dropzone"
+            aria-label="Zone de dépôt des tags fixes"
+          >
+            {fixedTags.length === 0 ? (
+              <div className="radio-fixed-tags-placeholder">
+                <span className="radio-fixed-pin-icon" aria-hidden="true">📌</span>
+                <span>Glisse tes tags ici (depuis les mots-clés ou le catalogue) pour les figer à chaque génération</span>
+              </div>
+            ) : (
+              <div className="radio-fixed-tags-list">
+                {fixedTags.map((tag, index) => {
+                  const category = getTagCategory(tag)
+                  return (
+                    <span
+                      key={`${tag}-${index}`}
+                      className={`radio-keyword-chip radio-fixed-tag-chip is-${category} ${draggedFixedTagIndex === index ? 'is-dragging' : ''}`}
+                      draggable
+                      onDragStart={(e) => handleFixedTagDragStart(e, index, tag)}
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                      }}
+                      onDrop={(e) => {
+                        e.stopPropagation()
+                        handleFixedTagDrop(e, index)
+                      }}
+                      onDragEnd={handleFixedTagDragEnd}
+                      title="Glisse pour réordonner · Clique sur la croix pour retirer"
+                    >
+                      <span className="radio-fixed-pin-icon" aria-hidden="true">📌</span>
+                      <span>{tag}</span>
+                      <button
+                        type="button"
+                        className="radio-chip-remove"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleRemoveFixedTag(index)
+                        }}
+                        aria-label={`Retirer ${tag} des tags fixes`}
+                        title={`Retirer ${tag}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="radio-timeline-phases-panel" data-testid="radio-timeline-phases-panel">
@@ -1241,7 +1475,10 @@ export const GenerativeRadio = ({
                     key={`${phaseLabel}-${index}`}
                     className={`radio-phase-step ${draggedPhaseIndex === index ? 'is-dragging' : ''}`}
                     draggable
-                    onDragStart={(e) => handlePhaseDragStart(e, index)}
+                    onDragStart={(e) => {
+                      handlePhaseDragStart(e, index)
+                      e.dataTransfer.setData('text/tag', phaseLabel)
+                    }}
                     onDragOver={handlePhaseDragOver}
                     onDrop={(e) => handlePhaseDrop(e, index)}
                     onDragEnd={handlePhaseDragEnd}
@@ -1280,6 +1517,8 @@ export const GenerativeRadio = ({
                   draggable
                   onDragStart={(e) => {
                     e.dataTransfer.setData('text/phase-palette', phase.label)
+                    e.dataTransfer.setData('text/tag', phase.label)
+                    e.dataTransfer.setData('text/plain', phase.label)
                   }}
                   onClick={() => handleAddPhase(phase.label)}
                   title={phase.description}
@@ -1485,23 +1724,44 @@ export const GenerativeRadio = ({
                 <div className="radio-modal-phase-grid">
                   {filteredPhases.map((phase) => {
                     const countInPhases = phases.filter((p) => p.toLowerCase() === phase.label.toLowerCase()).length
+                    const isPhaseFixed = fixedTags.some((token) => token.toLowerCase() === phase.label.toLowerCase())
                     return (
-                      <button
+                      <div
                         key={phase.id}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         className={`radio-modal-phase-card ${countInPhases > 0 ? 'is-in-timeline' : ''}`}
                         onClick={() => handleAddPhase(phase.label)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleAddPhase(phase.label) } }}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/phase-palette', phase.label)
+                          e.dataTransfer.setData('text/tag', phase.label)
+                          e.dataTransfer.setData('text/plain', phase.label)
+                        }}
                       >
                         <div className="radio-modal-phase-top">
                           <span className="radio-modal-phase-code">{phase.shortCode}</span>
                           <strong className="radio-modal-phase-name">{phase.label}</strong>
                           <span className="radio-modal-phase-energy">⚡ {phase.defaultEnergy}%</span>
+                          <button
+                            type="button"
+                            className={`radio-modal-pin-btn ${isPhaseFixed ? 'is-pinned' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleToggleFixedTag(phase.label)
+                            }}
+                            title={isPhaseFixed ? 'Retirer des tags fixes' : 'Verrouiller dans les tags fixes'}
+                            aria-label={isPhaseFixed ? 'Détacher des tags fixes' : 'Épingler aux tags fixes'}
+                          >
+                            📌
+                          </button>
                         </div>
                         <p className="radio-modal-phase-desc">{phase.description}</p>
                         <div className="radio-modal-phase-action">
                           {countInPhases > 0 ? `Présente (${countInPhases}×) · ＋ Ajouter encore` : '＋ Ajouter à la frise'}
                         </div>
-                      </button>
+                      </div>
                     )
                   })}
                 </div>
@@ -1516,21 +1776,46 @@ export const GenerativeRadio = ({
                     const isSelected = keywordTokens.some(
                       (token) => token.toLowerCase() === tag.label.toLowerCase(),
                     )
+                    const isFixed = fixedTags.some(
+                      (token) => token.toLowerCase() === tag.label.toLowerCase(),
+                    )
                     return (
-                      <button
+                      <div
                         key={tag.id}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         className={`radio-modal-tag-item ${isSelected ? 'is-selected' : ''}`}
                         onClick={() => handleToggleTag(tag.label)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggleTag(tag.label) } }}
                         aria-pressed={isSelected}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = 'copy'
+                          e.dataTransfer.setData('text/tag', tag.label)
+                          e.dataTransfer.setData('text/plain', tag.label)
+                        }}
                       >
                         <div className="radio-modal-tag-head">
                           <span className="radio-modal-tag-category">{CATEGORY_LABELS[tag.category]}</span>
-                          <span className="radio-modal-tag-status">{isSelected ? '✓ ACTIF' : '＋'}</span>
+                          <div className="radio-modal-tag-actions">
+                            <button
+                              type="button"
+                              className={`radio-modal-pin-btn ${isFixed ? 'is-pinned' : ''}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleToggleFixedTag(tag.label)
+                              }}
+                              title={isFixed ? 'Retirer des tags fixes' : 'Verrouiller dans les tags fixes'}
+                              aria-label={isFixed ? 'Détacher des tags fixes' : 'Épingler aux tags fixes'}
+                            >
+                              📌
+                            </button>
+                            <span className="radio-modal-tag-status">{isSelected ? '✓ ACTIF' : '＋'}</span>
+                          </div>
                         </div>
                         <strong className="radio-modal-tag-label">{tag.label}</strong>
                         {tag.description && <small className="radio-modal-tag-desc">{tag.description}</small>}
-                      </button>
+                      </div>
                     )
                   })}
                 </div>
@@ -1547,6 +1832,8 @@ export const GenerativeRadio = ({
           <div className="radio-modal-footer">
             <div className="radio-modal-footer-stats">
               <span><b>{keywordTokens.length}</b> tags actifs</span>
+              <span>·</span>
+              <span><b>{fixedTags.length}</b> tags fixes</span>
               <span>·</span>
               <span><b>{phases.length}</b> phases dans la frise</span>
             </div>
