@@ -1473,7 +1473,7 @@ export const GenerativeRadio = ({
                 return (
                   <div
                     key={`${phaseLabel}-${index}`}
-                    className={`radio-phase-step ${draggedPhaseIndex === index ? 'is-dragging' : ''}`}
+                    className={`radio-phase-step is-phases ${draggedPhaseIndex === index ? 'is-dragging' : ''}`}
                     draggable
                     onDragStart={(e) => {
                       handlePhaseDragStart(e, index)
@@ -1512,7 +1512,7 @@ export const GenerativeRadio = ({
                 <button
                   key={phase.id}
                   type="button"
-                  className="radio-phase-add-chip"
+                  className="radio-phase-add-chip is-phases"
                   aria-label={`Ajouter ${phase.label}`}
                   draggable
                   onDragStart={(e) => {
@@ -1730,7 +1730,7 @@ export const GenerativeRadio = ({
                         key={phase.id}
                         role="button"
                         tabIndex={0}
-                        className={`radio-modal-phase-card ${countInPhases > 0 ? 'is-in-timeline' : ''}`}
+                        className={`radio-modal-phase-card is-phases ${countInPhases > 0 ? 'is-in-timeline' : ''}`}
                         onClick={() => handleAddPhase(phase.label)}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleAddPhase(phase.label) } }}
                         draggable
@@ -1784,7 +1784,7 @@ export const GenerativeRadio = ({
                         key={tag.id}
                         role="button"
                         tabIndex={0}
-                        className={`radio-modal-tag-item ${isSelected ? 'is-selected' : ''}`}
+                        className={`radio-modal-tag-item is-${tag.category} ${isSelected ? 'is-selected' : ''}`}
                         onClick={() => handleToggleTag(tag.label)}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggleTag(tag.label) } }}
                         aria-pressed={isSelected}
