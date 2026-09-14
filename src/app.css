@@ -215,7 +215,7 @@ svg { display:block; }
 .machine-phase { display:flex; flex-direction:column; align-items:center; --cap-left:11%; --cap-right:11%; --cap-top:12%; --cap-bottom:17%; }
 .machine-pad-art { display:block; position:relative; width:100%; aspect-ratio:1; background:linear-gradient(#040408,#040408) center / 78% 72% no-repeat; }
 .machine-phase i { position:absolute; inset:0; height:100%; }
-.machine-phase-label { width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.machine-phase-label { display:block; width:100%; min-width:0; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .machine-phase-keys { align-items:start; }
 .machine-switch i { position:relative; --cap-left:14%; --cap-right:14%; --cap-top:16%; --cap-bottom:22%; background-image:none; }
 .machine-switch i::before,.machine-switch i::after {
