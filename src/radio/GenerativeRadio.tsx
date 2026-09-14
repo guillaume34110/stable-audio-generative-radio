@@ -594,6 +594,7 @@ export const GenerativeRadio = ({
     if (selectedModel) {
       setLocalModel(selectedModel)
       setModelImportState('ready')
+      setStatus(`Modèle Stable Audio 3 sélectionné · ${selectedModel.filename}`)
     }
   }, [selectedModel])
 

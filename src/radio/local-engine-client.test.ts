@@ -64,6 +64,16 @@ describe('local engine client', () => {
     await expect(detectLocalEngine()).resolves.toEqual({ state: 'stopped' })
   })
 
+  it('falls back to the same-origin proxy when loopback access is blocked', async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('private network blocked'))
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ version: '1.0.18' }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(detectLocalEngine()).resolves.toEqual({ state: 'unpaired', version: '1.0.18' })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/local-engine/health', expect.objectContaining({ cache: 'no-store' }))
+  })
+
   it('preserves compatibility details when the engine is degraded', async () => {
     window.localStorage.setItem('onus-local-engine-token', 'paired')
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

@@ -44,4 +44,18 @@ describe('stable audio radio API transport', () => {
 
     await expect(listStableAudioRadioSfts()).rejects.toThrow(LOCAL_RADIO_NETWORK_ERROR)
   })
+
+  it('uses the same-origin proxy when direct loopback access is blocked', async () => {
+    window.localStorage.setItem('onus-local-engine-token', 'paired-token')
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('private network blocked'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ runtime_ready: true, sfts: [], model_variants: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(listStableAudioRadioSfts()).resolves.toMatchObject({ runtime_ready: true, sfts: [] })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/stable-audio/radio/sfts', expect.objectContaining({ credentials: 'same-origin' }))
+  })
 })

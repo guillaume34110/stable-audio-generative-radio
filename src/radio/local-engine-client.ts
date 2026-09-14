@@ -51,12 +51,24 @@ type LocalEngineHealth = {
 }
 
 const probeLocalEngine = async (): Promise<LocalEngineStatus> => {
+  const request: RequestInit & { targetAddressSpace?: 'loopback' } = {
+    mode: 'cors',
+    cache: 'no-store',
+    targetAddressSpace: 'loopback',
+  }
   try {
-    const response = await fetch(`${LOCAL_ENGINE_ORIGIN}/api/local-engine/health`, {
-      mode: 'cors',
-      cache: 'no-store',
-      targetAddressSpace: 'loopback',
-    } as RequestInit & { targetAddressSpace: 'loopback' })
+    let response: Response
+    try {
+      response = await fetch(`${LOCAL_ENGINE_ORIGIN}/api/local-engine/health`, request)
+    } catch (directError) {
+      // The browser may block a loopback request with Local Network Access
+      // even though the Vite development proxy can reach the same engine.
+      try {
+        response = await fetch('/api/local-engine/health', request)
+      } catch {
+        throw directError
+      }
+    }
     if (!response.ok) return { state: 'missing' }
     const health = await response.json() as LocalEngineHealth
     return {

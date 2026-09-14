@@ -83,7 +83,18 @@ const stableAudioRadioResponse = async (path: string, init?: RequestInit): Promi
   if (token) request.targetAddressSpace = 'loopback'
 
   try {
-    return await fetch(token ? localEngineUrl(path) : radioApiUrl(path), request)
+    try {
+      return await fetch(token ? localEngineUrl(path) : radioApiUrl(path), request)
+    } catch (directError) {
+      // Keep the direct loopback path fast when allowed, but use the local
+      // Vite proxy when Chromium's Local Network Access policy blocks it.
+      if (!token) throw directError
+      try {
+        return await fetch(radioApiUrl(path), request)
+      } catch {
+        throw directError
+      }
+    }
   } catch {
     throw new Error(LOCAL_RADIO_NETWORK_ERROR)
   }
