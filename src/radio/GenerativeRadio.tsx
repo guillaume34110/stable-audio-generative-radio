@@ -745,6 +745,8 @@ export const GenerativeRadio = ({
     audio.load()
     setPosition(0)
     if (playing) {
+      const browserWindow = window as Window & typeof globalThis & { webkitAudioContext?: unknown }
+      if (browserWindow.AudioContext || browserWindow.webkitAudioContext) void ensureRadioDsp()?.resume()
       void audio.play().catch(() => {
         setPlaying(false)
         setStatus('Clique sur lecture pour autoriser la sortie audio.')
@@ -828,6 +830,16 @@ export const GenerativeRadio = ({
     } catch (dspError) {
       setError(dspError instanceof Error ? dspError.message : 'Le DSP navigateur n’est pas disponible.')
       return null
+    }
+  }
+
+  const handleAudioLoadedMetadata = (): void => {
+    // Keep the media element inside the DSP graph even when a track is loaded
+    // by a queued transition rather than by the first play click.
+    ensureRadioDsp()
+    const audio = audioRef.current
+    if (audio?.duration && Number.isFinite(audio.duration)) {
+      setPosition(Math.min(audio.currentTime, audio.duration))
     }
   }
 
@@ -1300,7 +1312,7 @@ export const GenerativeRadio = ({
       <div className="machine-panel machine-generate-panel"><MachineKey type="submit" className="machine-key machine-generate" disabled={generating || continuationGenerating}><span aria-hidden="true">✦</span> GÉNÉRER {currentTrack ? 'LA SUITE' : 'LE MORCEAU'}</MachineKey></div>
       <div className="machine-status machine-screen" role="status" aria-live="polite">{error ? <span id="radio-error" role="alert">{error}</span> : engineMessage && runtimeReady !== true ? engineMessage : status}</div>
     </form>
-    <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="auto" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); void dspRef.current?.resume() }} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError('Le WAV généré ne peut pas être décodé par le navigateur.'); setStatus('Lecture impossible · le moteur prépare un WAV compatible navigateur.') }} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={() => { if (audioRef.current?.duration && Number.isFinite(audioRef.current.duration)) setPosition(Math.min(audioRef.current.currentTime, audioRef.current.duration)) }} onEnded={handleAudioEnded} />
+    <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="auto" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); const browserWindow = window as Window & typeof globalThis & { webkitAudioContext?: unknown }; if (browserWindow.AudioContext || browserWindow.webkitAudioContext) void ensureRadioDsp()?.resume() }} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError('Le WAV généré ne peut pas être décodé par le navigateur.'); setStatus('Lecture impossible · le moteur prépare un WAV compatible navigateur.') }} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={handleAudioLoadedMetadata} onEnded={handleAudioEnded} />
     <RadioDialog open={tagModalOpen} onClose={() => setTagModalOpen(false)} title="Explorer les sons" wide>
 <p className="radio-catalog-description">Choisis les sons à ajouter à ta direction. Épingle ceux que tu veux retrouver dans chaque morceau.</p>
           <div className="radio-modal-controls">

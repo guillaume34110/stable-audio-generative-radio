@@ -62,6 +62,17 @@ const getAudioContextConstructor = (): AudioContextConstructor | null => {
   return browserWindow.AudioContext ?? browserWindow.webkitAudioContext ?? null
 }
 
+/**
+ * Update a live Web Audio parameter without leaving older knob movements in
+ * the automation queue. The optional cancellation keeps the controller
+ * compatible with the lightweight test doubles used outside a browser.
+ */
+const setAudioParamTarget = (param: AudioParam, value: number, now: number, timeConstant: number): void => {
+  const cancellableParam = param as AudioParam & { cancelScheduledValues?: (time: number) => AudioParam }
+  cancellableParam.cancelScheduledValues?.(now)
+  param.setTargetAtTime(value, now, timeConstant)
+}
+
 const sanitizeSettings = (settings: RadioDspSettings): RadioDspSettings => ({
   preampDb: clamp(Number(settings.preampDb) || 0, -12, 12),
   dspEnabled: settings.dspEnabled,
@@ -109,9 +120,12 @@ export const createRadioDsp = (
   noiseHighpass.Q.value = 0.7
   noiseLowpass.type = 'lowpass'
   noiseLowpass.Q.value = 0.7
-  body.type = 'peaking'
-  body.frequency.value = 60
-  body.Q.value = 1.1
+  // A shelf keeps the whole low register under control, like the LOW band on
+  // a hardware mixer. A narrow 60 Hz peak made normal bass material barely
+  // react to the control, which made the EQ feel decorative.
+  body.type = 'lowshelf'
+  body.frequency.value = 140
+  body.Q.value = 0.7
   clarity.type = 'peaking'
   clarity.frequency.value = 2200
   clarity.Q.value = 0.9
@@ -147,19 +161,19 @@ export const createRadioDsp = (
     const noiseAmount = settings.noiseFilter / 100
     const dspAmount = settings.dspAmount / 100
 
-    preamp.gain.setTargetAtTime(dbToGain(settings.preampDb), now, 0.018)
-    noiseHighpass.frequency.setTargetAtTime(dsp ? 28 + noiseAmount * 12 : 8, now, 0.045)
-    noiseLowpass.frequency.setTargetAtTime(dsp ? 17_000 - noiseAmount * 3_500 : maxFilterFrequency, now, 0.045)
-    body.gain.setTargetAtTime(dsp ? (settings.lowGainDb ?? 0) + dspAmount * 3.6 : 0, now, 0.08)
-    clarity.gain.setTargetAtTime(dsp ? (settings.midGainDb ?? 0) + dspAmount * 2.2 : 0, now, 0.08)
-    air.gain.setTargetAtTime(dsp ? (settings.highGainDb ?? 0) - dspAmount * 3.2 : 0, now, 0.08)
-    intelligentTrim.gain.setTargetAtTime(settings.limiterEnabled ? intelligentTrim.gain.value : 1, now, 0.08)
-    limiter.threshold.setTargetAtTime(settings.limiterEnabled ? settings.limiterCeilingDb : 0, now, 0.08)
-    limiter.knee.setTargetAtTime(settings.limiterEnabled ? 4 : 0, now, 0.08)
-    limiter.ratio.setTargetAtTime(settings.limiterEnabled ? 20 : 1, now, 0.08)
-    limiter.attack.setTargetAtTime(settings.limiterEnabled ? 0.016 : 0.01, now, 0.08)
-    limiter.release.setTargetAtTime(settings.limiterEnabled ? 0.14 : 0.2, now, 0.08)
-    output.gain.setTargetAtTime((settings.volume ?? 78) / 100 * (settings.limiterEnabled ? dbToGain(-0.15) : 1), now, 0.08)
+    setAudioParamTarget(preamp.gain, dbToGain(settings.preampDb), now, 0.018)
+    setAudioParamTarget(noiseHighpass.frequency, dsp ? 28 + noiseAmount * 12 : 8, now, 0.045)
+    setAudioParamTarget(noiseLowpass.frequency, dsp ? 17_000 - noiseAmount * 3_500 : maxFilterFrequency, now, 0.045)
+    setAudioParamTarget(body.gain, dsp ? (settings.lowGainDb ?? 0) + dspAmount * 3.6 : 0, now, 0.08)
+    setAudioParamTarget(clarity.gain, dsp ? (settings.midGainDb ?? 0) + dspAmount * 2.2 : 0, now, 0.08)
+    setAudioParamTarget(air.gain, dsp ? (settings.highGainDb ?? 0) - dspAmount * 3.2 : 0, now, 0.08)
+    setAudioParamTarget(intelligentTrim.gain, settings.limiterEnabled ? intelligentTrim.gain.value : 1, now, 0.08)
+    setAudioParamTarget(limiter.threshold, settings.limiterEnabled ? settings.limiterCeilingDb : 0, now, 0.08)
+    setAudioParamTarget(limiter.knee, settings.limiterEnabled ? 4 : 0, now, 0.08)
+    setAudioParamTarget(limiter.ratio, settings.limiterEnabled ? 20 : 1, now, 0.08)
+    setAudioParamTarget(limiter.attack, settings.limiterEnabled ? 0.016 : 0.01, now, 0.08)
+    setAudioParamTarget(limiter.release, settings.limiterEnabled ? 0.14 : 0.2, now, 0.08)
+    setAudioParamTarget(output.gain, (settings.volume ?? 78) / 100 * (settings.limiterEnabled ? dbToGain(-0.15) : 1), now, 0.08)
   }
 
   const updateIntelligentTrim = (inputPeakDb: number): void => {
@@ -170,7 +184,7 @@ export const createRadioDsp = (
       : 1
     const now = context.currentTime
     const timeConstant = desiredGain < intelligentTrim.gain.value ? 0.035 : 0.45
-    intelligentTrim.gain.setTargetAtTime(desiredGain, now, timeConstant)
+    setAudioParamTarget(intelligentTrim.gain, desiredGain, now, timeConstant)
   }
 
   const setSettings = (nextSettings: RadioDspSettings): void => {

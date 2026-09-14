@@ -3,6 +3,7 @@ import { createRadioDsp, defaultRadioDspSettings } from './radio-dsp'
 
 class MockAudioParam {
   value = 0
+  readonly cancelScheduledValues = vi.fn()
   readonly setTargetAtTime = vi.fn((value: number) => { this.value = value })
 }
 
@@ -80,6 +81,8 @@ describe('radio DSP monitoring chain', () => {
     expect(context.filters).toHaveLength(5)
     expect(context.analysers).toHaveLength(4)
     expect(context.compressors).toHaveLength(1)
+    expect(context.filters[2]!.type).toBe('lowshelf')
+    expect(context.filters[2]!.frequency.value).toBe(140)
     expect(context.compressors[0]!.threshold.value).toBe(-1)
     expect(context.compressors[0]!.ratio.value).toBe(20)
 
@@ -89,6 +92,7 @@ describe('radio DSP monitoring chain', () => {
     expect(context.compressors[0]!.threshold.value).toBe(0)
     controller.setSettings({ ...defaultRadioDspSettings, dspAmount: 0, lowGainDb: 4, midGainDb: -3, highGainDb: 6, volume: 0 })
     expect(context.filters.slice(2).map((filter) => filter.gain.value)).toEqual([4, -3, 6])
+    expect(context.filters[2]!.gain.cancelScheduledValues).toHaveBeenCalled()
     expect(context.gains[2]!.gain.value).toBe(0)
     expect(controller.readFrequencyResponse()).toEqual(new Array(96).fill(0))
     context.analysers[2]!.getFloatTimeDomainData.mockImplementation((samples) => samples.fill(.5))
