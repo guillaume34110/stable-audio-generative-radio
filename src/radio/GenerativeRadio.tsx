@@ -17,6 +17,7 @@ import {
   formatPhasesPrompt,
   getTagCategory,
   STABLE_AUDIO_TAGS,
+  STABLE_AUDIO_TAG_CATALOG_NOTE,
   TRACK_PHASES,
   type TagCategory,
 } from './stable-audio-tags'
@@ -161,8 +162,8 @@ const maximumSftBytes = 2 * 1024 * 1024 * 1024
 const fallbackModelVariants: readonly StableAudioRadioModelVariant[] = [
   {
     id: 'fp16',
-    label: 'FP16 · SFT importé',
-    description: 'SFT choisi dans la page, précision native',
+    label: 'FP16 · modèle importé',
+    description: 'Modèle choisi dans la page, précision native',
     available: true,
     bits: null,
     size_bytes: null,
@@ -171,8 +172,8 @@ const fallbackModelVariants: readonly StableAudioRadioModelVariant[] = [
   },
   {
     id: 'int8',
-    label: 'INT8 · Berlin SFT fusionné',
-    description: 'DiT Medium quantifié INT8 · SFT Berlin intégré',
+    label: 'INT8 · modèle Berlin fusionné',
+    description: 'DiT Medium quantifié INT8 · modèle Berlin intégré',
     available: false,
     bits: 8,
     size_bytes: null,
@@ -181,8 +182,8 @@ const fallbackModelVariants: readonly StableAudioRadioModelVariant[] = [
   },
   {
     id: 'int4',
-    label: 'INT4 · Berlin SFT fusionné',
-    description: 'DiT Medium quantifié INT4 · SFT Berlin intégré',
+    label: 'INT4 · modèle Berlin fusionné',
+    description: 'DiT Medium quantifié INT4 · modèle Berlin intégré',
     available: false,
     bits: 4,
     size_bytes: null,
@@ -191,8 +192,8 @@ const fallbackModelVariants: readonly StableAudioRadioModelVariant[] = [
   },
   {
     id: 'int2',
-    label: 'INT2 · Berlin SFT fusionné',
-    description: 'DiT Medium quantifié INT2 · SFT Berlin intégré',
+    label: 'INT2 · modèle Berlin fusionné',
+    description: 'DiT Medium quantifié INT2 · modèle Berlin intégré',
     available: false,
     bits: 2,
     size_bytes: null,
@@ -201,8 +202,8 @@ const fallbackModelVariants: readonly StableAudioRadioModelVariant[] = [
   },
   {
     id: 'int1',
-    label: 'INT1 · Berlin SFT expérimental',
-    description: 'DiT Medium binaire packé INT1 · SFT Berlin intégré',
+    label: 'INT1 · modèle Berlin expérimental',
+    description: 'DiT Medium binaire packé INT1 · modèle Berlin intégré',
     available: false,
     bits: 1,
     size_bytes: null,
@@ -272,7 +273,7 @@ const pickGenerationTags = (pool: readonly string[], seed: number): string[] => 
 
 const buildProceduralRecipe = (input: RadioGenerationSettings, variation: number, enabled: boolean): RadioRecipe => {
   const keywordPool = parseKeywords(input.keywords)
-  const fixedTags = (input.fixedTags ?? []).map((t) => t.trim()).filter(Boolean)
+  const fixedTags = parseKeywords((input.fixedTags ?? []).join('\n'))
   const fixedLower = new Set(fixedTags.map((t) => t.toLowerCase()))
   const variablePool = keywordPool.filter((t) => !fixedLower.has(t.toLowerCase()))
   const normalizedKeywords = Array.from(new Set([...fixedTags, ...keywordPool])).join(', ')
@@ -280,6 +281,8 @@ const buildProceduralRecipe = (input: RadioGenerationSettings, variation: number
   const seed = typeof input.customSeed === 'number' && Number.isFinite(input.customSeed)
     ? input.customSeed
     : autoSeed
+  // Fixed tags are the base of every recipe; optional tags are sampled only
+  // from the user's keyword field, never from the built-in catalogue.
   const variableTags = enabled ? pickGenerationTags(variablePool, seed) : [...variablePool]
   const tags = Array.from(new Set([...fixedTags, ...variableTags]))
   const phases = input.phases ?? []
@@ -419,7 +422,7 @@ const RadioTrackCard = ({ track, slot, statusLabel, building = false }: RadioTra
       <div><dt>DÉRIVE MAX</dt><dd>±{Math.round(track.recipe.drift / 4)} BPM · microtiming</dd></div>
       <div><dt>ÉNERGIE</dt><dd>{track.recipe.energy}%</dd></div>
       <div><dt>MATIÈRE</dt><dd>{track.recipe.texture}%</dd></div>
-      <div><dt>SFT</dt><dd>{track.recipe.modelVariant.toUpperCase()} · {Math.round(track.recipe.loraStrength * 100)}%</dd></div>
+      <div><dt>MODÈLE</dt><dd>{track.recipe.modelVariant.toUpperCase()} · {Math.round(track.recipe.loraStrength * 100)}%</dd></div>
       <div><dt>STEPS</dt><dd>{track.recipe.steps ?? defaultSteps}</dd></div>
       <div><dt>CFG / APG</dt><dd>{(track.recipe.cfg ?? defaultCfg).toFixed(1)} / {(track.recipe.apg ?? defaultApg).toFixed(2)}</dd></div>
       <div><dt>SEED</dt><dd>{track.recipe.seed}</dd></div>
@@ -514,7 +517,7 @@ export const GenerativeRadio = ({
   const [generationProgress, setGenerationProgress] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [continuationGenerating, setContinuationGenerating] = useState(false)
-  const [status, setStatus] = useState('Importe un SFT Stable Audio 3 ou choisis une variante INT8/INT4/INT2/INT1.')
+  const [status, setStatus] = useState('Importe un modèle Stable Audio 3 ou choisis une variante INT8/INT4/INT2/INT1.')
   const [error, setError] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const dspRef = useRef<RadioDspController | null>(null)
@@ -687,12 +690,12 @@ export const GenerativeRadio = ({
     if (!file) return
     setError(null)
     if (!file.name.toLowerCase().endsWith('.safetensors')) {
-      setError('Choisis un adaptateur Stable Audio 3 au format .safetensors.')
+      setError('Choisis un modèle Stable Audio 3 au format .safetensors.')
       event.currentTarget.value = ''
       return
     }
     if (file.size > maximumSftBytes) {
-      setError('Le SFT doit peser moins de 2 Go.')
+      setError('Le modèle doit peser moins de 2 Go.')
       event.currentTarget.value = ''
       return
     }
@@ -700,17 +703,17 @@ export const GenerativeRadio = ({
     setLocalModel(null)
     setModelVariant('fp16')
     setModelImportState(onImportModel ? 'uploading' : 'ready')
-    setStatus(onImportModel ? `Import du SFT en cours · ${file.name}` : `SFT sélectionné · ${file.name}`)
+    setStatus(onImportModel ? `Import du modèle en cours · ${file.name}` : `Modèle sélectionné · ${file.name}`)
     if (!onImportModel) return
     try {
       const adapter = await onImportModel(file)
       if (adapter) setLocalModel(adapter)
       setModelImportState('ready')
-      setStatus(`SFT Stable Audio 3 prêt · ${adapter?.filename ?? file.name}`)
+      setStatus(`Modèle Stable Audio 3 prêt · ${adapter?.filename ?? file.name}`)
     } catch (importError) {
       setModelImportState('error')
-      setError(importError instanceof Error ? importError.message : 'Impossible d’importer ce SFT.')
-      setStatus('Import du SFT interrompu.')
+      setError(importError instanceof Error ? importError.message : 'Impossible d’importer ce modèle.')
+      setStatus('Import du modèle interrompu.')
     }
   }
 
@@ -723,7 +726,7 @@ export const GenerativeRadio = ({
     setModelImportState('ready')
     onSelectModel?.(model)
     setError(null)
-    setStatus(`SFT Stable Audio 3 sélectionné · ${model.filename}`)
+    setStatus(`Modèle Stable Audio 3 sélectionné · ${model.filename}`)
   }
 
   const selectModelVariant = (event: ChangeEvent<HTMLSelectElement>): void => {
@@ -733,8 +736,8 @@ export const GenerativeRadio = ({
     setError(null)
     setStatus(
       variant.id === 'fp16'
-        ? 'Variante FP16 sélectionnée · le SFT importé sera utilisé.'
-        : `${variant.label} sélectionné · le SFT est déjà fusionné dans le DiT.`,
+        ? 'Variante FP16 sélectionnée · le modèle importé sera utilisé.'
+        : `${variant.label} sélectionné · le modèle est déjà fusionné dans le DiT.`,
     )
   }
 
@@ -745,7 +748,7 @@ export const GenerativeRadio = ({
     setModelImportState('idle')
     onClearModel?.()
     setError(null)
-    setStatus('Aucun SFT chargé · importe un adaptateur pour reprendre.')
+    setStatus('Aucun modèle chargé · importe un fichier pour reprendre.')
   }
 
   const ensureRadioDsp = (): RadioDspController | null => {
@@ -821,6 +824,10 @@ export const GenerativeRadio = ({
     setContinuationGenerating(true)
     setGenerationProgress(4)
     const variation = variationCounterRef.current
+    // Reserve the sequence slot before awaiting the model. The buffered track
+    // can become active while this request is finishing, so allocating here
+    // prevents the following prefetch from reusing its seed.
+    variationCounterRef.current = variation + 1
     const recipe = buildContinuationRecipe(sourceRecipe, variation, latestSettings)
     const previewTrack = trackFromRecipe(recipe, variation, 'independent')
     setContinuationPreview(previewTrack)
@@ -919,7 +926,7 @@ export const GenerativeRadio = ({
       return
     }
     if (modelImportState === 'uploading') {
-      setError('Attends la fin de l’import du SFT avant de générer.')
+      setError('Attends la fin de l’import du modèle avant de générer.')
       return
     }
     if (!selectedModelVariant?.available) {
@@ -928,8 +935,8 @@ export const GenerativeRadio = ({
       return
     }
     if (modelVariant === 'fp16' && !selectedAdapter && !sftFile) {
-      setError('Importe d’abord un SFT Stable Audio 3 depuis ta machine.')
-      setStatus('Aucun SFT ou modèle quantifié sélectionné.')
+      setError('Importe d’abord un modèle Stable Audio 3 depuis ta machine.')
+      setStatus('Aucun modèle ou modèle quantifié sélectionné.')
       return
     }
     if (!onGenerate) {
@@ -1246,34 +1253,42 @@ export const GenerativeRadio = ({
     })
   }, [modalSearch])
 
-  return <section className="radio-widget" aria-labelledby="radio-widget-heading" data-testid="generative-radio">
+  return <section className={`radio-widget ${playing ? 'is-playing' : ''}`} aria-labelledby="radio-widget-heading" data-testid="generative-radio">
     <header className="radio-widget-topline">
-      <div className="radio-live-label"><i aria-hidden="true" /> <span>GEN RADIO</span><small>FLUX VIVANT</small></div>
-      <div className="radio-engine-label"><span>STABLE AUDIO 3 / {modelVariant.toUpperCase()}</span><b>LOCAL SFT · 1,5×</b></div>
+      <div className="radio-live-label"><i aria-hidden="true" /> <span>SESSION</span><small>{playing ? 'EN ÉCOUTE' : generating ? 'COMPOSITION' : 'À COMPOSER'}</small></div>
+      <div className="radio-engine-label"><span>STABLE AUDIO 3 / {modelVariant.toUpperCase()}</span><b>LOCAL</b></div>
     </header>
 
     <div className="radio-widget-grid">
       <div className="radio-player-column">
         <div className="radio-model-frame radio-sft-frame">
           <div className="radio-sft-visual" aria-hidden="true">
-            <div className="radio-sft-mark"><strong>SA3</strong><span>MEDIUM / {modelVariant.toUpperCase()} / MLX</span></div>
+            <svg className="radio-sound-sculpture" viewBox="0 0 360 360" aria-hidden="true">
+              {Array.from({ length: 38 }, (_, index) => {
+                const x = 46 + index * 7.25
+                const height = 48 + Math.pow(Math.sin(index / 37 * Math.PI), 1.3) * 190
+                const offset = Math.sin(index * .19) * 28
+                return <line key={index} x1={x} x2={x} y1={180 - height / 2 + offset} y2={180 + height / 2 + offset} stroke={index < 19 ? '#315de0' : '#668aef'} strokeWidth="3" strokeLinecap="round" />
+              })}
+            </svg>
+            <div className="radio-sft-mark"><strong>Sound in motion.</strong><span>STABLE AUDIO 3 / {modelVariant.toUpperCase()}</span></div>
             <div className="radio-sft-wave"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
-            <span className="radio-sft-corner">DIFFUSION / 8 STEPS</span>
+            <span className="radio-sft-corner">{steps} STEPS</span>
           </div>
-          <span className="radio-model-stamp">SFT / STABLE AUDIO 3</span>
+          <span className="radio-model-stamp">MATIÈRE SONORE</span>
           <label className={`radio-model-upload ${modelImportState === 'uploading' ? 'is-uploading' : ''}`}>
-            <input className="radio-file-input" type="file" accept=".safetensors,application/octet-stream" onChange={(event) => void handleSftFile(event)} aria-label="Charger un SFT Stable Audio 3" disabled={modelImportState === 'uploading'} />
-            <span>{modelImportState === 'uploading' ? 'IMPORT EN COURS…' : '＋ IMPORTER UN SFT'}</span>
+            <input className="radio-file-input" type="file" accept=".safetensors,application/octet-stream" onChange={(event) => void handleSftFile(event)} aria-label="Charger un modèle Stable Audio 3" disabled={modelImportState === 'uploading'} />
+            <span>{modelImportState === 'uploading' ? 'IMPORT EN COURS…' : '＋ IMPORTER UN MODÈLE'}</span>
           </label>
         </div>
         <div className={`radio-sft-details ${selectedAdapter || quantizedModelSelected ? 'is-ready' : ''}`} aria-live="polite">
-          <strong>{quantizedModelSelected ? selectedModelVariant?.label : selectedAdapter?.filename ?? sftFile?.name ?? 'Aucun SFT chargé'}</strong>
-          <small>{quantizedModelSelected ? `${selectedModelVariant?.size_bytes ? formatBytes(selectedModelVariant.size_bytes) : 'poids locaux'} · SFT Berlin fusionné · influence 25% fixe` : selectedAdapter ? `${formatBytes(selectedAdapter.size_bytes)} · adaptateur local prêt` : sftFile ? `${formatBytes(sftFile.size)} · en attente du moteur local` : 'Fichier .safetensors Stable Audio 3 requis'}</small>
+          <strong>{quantizedModelSelected ? selectedModelVariant?.label : selectedAdapter?.filename ?? sftFile?.name ?? 'Aucun modèle chargé'}</strong>
+          <small>{quantizedModelSelected ? `${selectedModelVariant?.size_bytes ? formatBytes(selectedModelVariant.size_bytes) : 'poids locaux'} · modèle Berlin fusionné · influence 25% fixe` : selectedAdapter ? `${formatBytes(selectedAdapter.size_bytes)} · modèle local prêt` : sftFile ? `${formatBytes(sftFile.size)} · en attente du moteur local` : 'Fichier .safetensors Stable Audio 3 requis'}</small>
         </div>
-        {modelOptions.length > 0 && <label className="radio-model-select" htmlFor="radio-installed-sft"><span>SFT installés</span><select id="radio-installed-sft" value={selectedAdapter?.id ?? ''} onChange={selectInstalledModel}><option value="">Choisir un adaptateur…</option>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.filename}</option>)}</select></label>}
+        {modelOptions.length > 0 && <label className="radio-model-select" htmlFor="radio-installed-model"><span>Modèles installés</span><select id="radio-installed-model" value={selectedAdapter?.id ?? ''} onChange={selectInstalledModel}><option value="">Choisir un modèle…</option>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.filename}</option>)}</select></label>}
         <label className="radio-model-select" htmlFor="radio-model-variant"><span>Variante du modèle</span><select id="radio-model-variant" value={modelVariant} onChange={selectModelVariant}>{modelVariantOptions.map((variant) => <option key={variant.id} value={variant.id} disabled={!variant.available}>{variant.label}{variant.available ? '' : ' · non installée'}</option>)}</select><small>{selectedModelVariant?.description ?? 'Choisis une précision Stable Audio 3.'}</small></label>
         <a className="radio-model-help" href="https://huggingface.co/stabilityai/stable-audio-3-medium" target="_blank" rel="noreferrer">Looking for a model? <span>Stable Audio 3 Medium on Hugging Face ↗</span></a>
-        {(selectedAdapter || sftFile) && <button className="radio-model-reset" type="button" onClick={resetModel}>Retirer le SFT sélectionné</button>}
+        {(selectedAdapter || sftFile) && <button className="radio-model-reset" type="button" onClick={resetModel}>Retirer le modèle sélectionné</button>}
 
         <div className="radio-track-copy">
           <span className="radio-eyebrow">NOW PLAYING</span>
@@ -1540,7 +1555,7 @@ export const GenerativeRadio = ({
           <p>{activeRecipe ? `Flux actif · ${activeRecipe.tags.length} tags tirés au hasard depuis un pool de ${activeRecipe.keywordPool.length} tags utilisateur · ${activeRecipe.bpm} BPM cible verrouillé · énergie ${activeRecipe.energy}% · matière ${activeRecipe.texture}%` : `Tags utilisateur uniquement · nombre de tags variable à chaque génération · BPM cible verrouillé · énergie et matière évoluent sur 6 min`}</p>
         </div>
 
-        <div className="radio-dsp-panel" data-testid="radio-dsp-panel">
+        <details className="radio-dsp-panel" data-testid="radio-dsp-panel"><summary className="radio-advanced-summary">Traitement audio <span>Égalisation, filtre & limiteur</span></summary>
           <label className="radio-dsp-switch" htmlFor="radio-dsp-enabled">
             <input id="radio-dsp-enabled" type="checkbox" checked={dspEnabled} onChange={(event) => setDspEnabled(event.currentTarget.checked)} />
             <span><strong>DSP PRO / MONITORING</strong><small>Rondeur kick 60Hz, clarté 2.2kHz, anti-traîne 8.5kHz & limiteur doux</small></span>
@@ -1563,7 +1578,7 @@ export const GenerativeRadio = ({
             <div className="radio-dsp-meter-bar"><i style={{ width: `${clamp((dspMeter.outputPeakDb + 60) / 60 * 100, 0, 100)}%` }} /></div>
             <div className="radio-dsp-meter-values"><span>IN {formatDecibels(dspMeter.inputPeakDb)}</span><span>OUT {formatDecibels(dspMeter.outputPeakDb)}</span><span>CEIL {formatDecibels(limiterCeilingDb)}</span></div>
           </div>
-        </div>
+        </details>
 
         <div className="radio-control-grid">
           <label className="radio-slider-field" htmlFor="radio-bpm"><span>Tempo de base · cible verrouillée <b>{bpm} BPM</b></span><input id="radio-bpm" type="range" min="60" max="220" step="1" value={bpm} style={percentStyle((bpm - 60) / 160 * 100)} onChange={(event) => setBpm(event.currentTarget.valueAsNumber)} /></label>
@@ -1571,15 +1586,15 @@ export const GenerativeRadio = ({
           <label className="radio-slider-field" htmlFor="radio-energy"><span>Énergie <b>{energy}%</b></span><input id="radio-energy" type="range" min="0" max="100" step="1" value={energy} style={percentStyle(energy)} onChange={(event) => setEnergy(event.currentTarget.valueAsNumber)} /></label>
           <label className="radio-slider-field" htmlFor="radio-texture"><span>Matière <b>{texture}%</b></span><input id="radio-texture" type="range" min="0" max="100" step="1" value={texture} style={percentStyle(texture)} onChange={(event) => setTexture(event.currentTarget.valueAsNumber)} /></label>
           <label className="radio-slider-field" htmlFor="radio-duration"><span>Programme <b>{formatClock(durationSeconds)}</b></span><input id="radio-duration" type="range" min={minimumRadioProgramSeconds} max={maximumRadioProgramSeconds} step="1" value={durationSeconds} style={percentStyle((durationSeconds - minimumRadioProgramSeconds) / (maximumRadioProgramSeconds - minimumRadioProgramSeconds) * 100)} onChange={(event) => setDurationSeconds(event.currentTarget.valueAsNumber)} /></label>
-          <label className="radio-slider-field" htmlFor="radio-sft-strength"><span>Influence SFT <b>{quantizedModelSelected ? '25% FIXE' : `${loraStrength}%`}</b></span><input id="radio-sft-strength" type="range" min="0" max="100" step="1" value={quantizedModelSelected ? 25 : loraStrength} style={percentStyle(quantizedModelSelected ? 25 : loraStrength)} onChange={(event) => setLoraStrength(event.currentTarget.valueAsNumber)} disabled={quantizedModelSelected} /></label>
+          <label className="radio-slider-field" htmlFor="radio-sft-strength"><span>Influence du modèle <b>{quantizedModelSelected ? '25% FIXE' : `${loraStrength}%`}</b></span><input id="radio-sft-strength" type="range" min="0" max="100" step="1" value={quantizedModelSelected ? 25 : loraStrength} style={percentStyle(quantizedModelSelected ? 25 : loraStrength)} onChange={(event) => setLoraStrength(event.currentTarget.valueAsNumber)} disabled={quantizedModelSelected} /></label>
         </div>
 
         <fieldset className="radio-evolution-field"><legend>Courbe d’évolution</legend><div className="radio-evolution-options">{evolutionLabels.map((item) => <button key={item.id} className={evolution === item.id ? 'is-selected' : ''} type="button" aria-pressed={evolution === item.id} onClick={() => setEvolution(item.id)}><strong>{item.label}</strong><small>{item.hint}</small></button>)}</div></fieldset>
 
-        <details className="radio-model-options-panel" data-testid="radio-model-options-panel" open>
+        <details className="radio-model-options-panel" data-testid="radio-model-options-panel">
           <summary className="radio-model-options-summary">
-            <span><strong>OPTIONS DU MODÈLE (DIFFUSION)</strong><small>Steps, CFG, APG, seed & prompt négatif</small></span>
-            <span className="radio-model-options-badge">RÉGLAGES LLM / IA</span>
+            <span><strong>Réglages de génération</strong><small>Steps, CFG, APG, seed & prompt négatif</small></span>
+            <span className="radio-model-options-badge">AVANCÉ</span>
           </summary>
           <div className="radio-dsp-control-grid" style={{ paddingTop: '8px' }}>
             <label className="radio-slider-field" htmlFor="radio-steps"><span>Steps d’échantillonnage <b>{steps} steps</b></span><input id="radio-steps" type="range" min="1" max="24" step="1" value={steps} style={percentStyle((steps - 1) / 23 * 100)} onChange={(event) => setSteps(event.currentTarget.valueAsNumber)} /></label>
@@ -1642,7 +1657,7 @@ export const GenerativeRadio = ({
       {activeQueueTrack ? <>
         <RadioTrackCard track={activeQueueTrack} slot="current" statusLabel={currentTrack ? (playing ? 'PLAYING / ACTIF' : 'PAUSED / PAUSE') : 'BUILDING / CALCUL'} building={!currentTrack} />
         {nextQueueTrack ? <RadioTrackCard track={nextQueueTrack} slot="next" statusLabel={continuationTrack ? 'READY / PRÊT' : continuationGenerating ? `BUILDING / ${generationProgress}%` : 'WAITING / ATTENTE'} building={continuationGenerating} /> : <div className="radio-queue-row is-next is-empty" data-testid="next-radio-track" aria-label="Prochain morceau"><div className="radio-queue-track-heading"><span>02 · UP NEXT</span><b>WAITING / ATTENTE</b></div><strong className="radio-queue-title">Prochain morceau en attente</strong><small>Les paramètres complets apparaîtront dès le lancement de sa préparation.</small></div>}
-      </> : <div className="radio-queue-empty">Aucun flux dans le lecteur · importe ton SFT puis lance la composition.</div>}
+      </> : <div className="radio-queue-empty">Aucun flux dans le lecteur · importe ton modèle puis lance la composition.</div>}
     </div>
 
     {tagModalOpen && (
@@ -1661,9 +1676,9 @@ export const GenerativeRadio = ({
         >
           <div className="radio-modal-header">
             <div>
-              <span className="radio-eyebrow">STABLE AUDIO 3 · DICTIONNAIRE DE TAGS</span>
-              <h3 id="radio-modal-title">Catalogue de tags & structure</h3>
-              <p>Clique sur un tag pour l’ajouter/retirer de tes mots-clés ou phases</p>
+              <span className="radio-eyebrow">STABLE AUDIO 3 · PROMPT LIBRE</span>
+              <h3 id="radio-modal-title">Vocabulaire de tags & structure</h3>
+              <p>{STABLE_AUDIO_TAG_CATALOG_NOTE} Clique sur un tag pour l’ajouter/retirer de tes mots-clés ou phases.</p>
             </div>
             <button
               type="button"

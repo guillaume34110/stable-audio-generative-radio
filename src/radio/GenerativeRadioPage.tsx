@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { GenerativeRadio, type RadioGenerationRequest } from './GenerativeRadio'
 import {
   createStableAudioRadioGeneration,
@@ -12,6 +12,28 @@ import {
 
 type GenerativeRadioPageProps = {
   onBack?: () => void
+}
+
+const RADIO_SELECTED_MODEL_STORAGE_KEY = 'onus-generative-radio-selected-model'
+
+const readSelectedModelId = (): string | null => {
+  if (typeof window === 'undefined') return null
+  try {
+    const stored = window.localStorage.getItem(RADIO_SELECTED_MODEL_STORAGE_KEY)?.trim()
+    return stored || null
+  } catch {
+    return null
+  }
+}
+
+const rememberSelectedModel = (modelId: string | null): void => {
+  if (typeof window === 'undefined') return
+  try {
+    if (modelId) window.localStorage.setItem(RADIO_SELECTED_MODEL_STORAGE_KEY, modelId)
+    else window.localStorage.removeItem(RADIO_SELECTED_MODEL_STORAGE_KEY)
+  } catch {
+    // Ignore storage errors; the engine catalogue remains authoritative.
+  }
 }
 
 export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): ReactElement => {
@@ -39,34 +61,50 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
     }
   }
 
+  const loadCatalog = useCallback(async (): Promise<void> => {
+    const catalog = await listStableAudioRadioSfts()
+    setStableAudioRuntimeReady(catalog.runtime_ready)
+    setModels(catalog.sfts)
+    setModelVariants(catalog.model_variants)
+    const storedModelId = readSelectedModelId()
+    const nextModel = catalog.sfts.find((model) => model.id === storedModelId) ?? catalog.sfts[0] ?? null
+    setSelectedModel(nextModel)
+    rememberSelectedModel(nextModel?.id ?? null)
+  }, [])
+
   useEffect(() => {
     let active = true
-    void listStableAudioRadioSfts().then((catalog) => {
-      if (!active) return
-      setStableAudioRuntimeReady(catalog.runtime_ready)
-      setModels(catalog.sfts)
-      setModelVariants(catalog.model_variants)
-      setSelectedModel((current) => current ?? catalog.sfts[0] ?? null)
-    }).catch(() => {
+    void loadCatalog().catch(() => {
       if (active) setStableAudioRuntimeReady(false)
     })
     return () => {
       active = false
       for (const url of [...audioUrlsRef.current]) releaseAudioUrl(url)
     }
-  }, [])
+  }, [loadCatalog])
 
   const handleImportModel = async (file: File): Promise<StableAudioRadioAdapter> => {
     const adapter = await uploadStableAudioRadioSft(file)
     setModels((current) => [adapter, ...current.filter((item) => item.id !== adapter.id)])
     setSelectedModel(adapter)
+    rememberSelectedModel(adapter.id)
     setStableAudioRuntimeReady(true)
     return adapter
   }
 
+  const handleSelectModel = (model: StableAudioRadioAdapter): void => {
+    setSelectedModel(model)
+    rememberSelectedModel(model.id)
+  }
+
+  const handleClearModel = (): void => {
+    setSelectedModel(null)
+    rememberSelectedModel(null)
+  }
+
   const handleGenerate = async (request: RadioGenerationRequest, onProgress?: (progress: number) => void) => {
     if (request.modelVariant === 'fp16' && !request.sftId) {
-      throw new Error('Importe un SFT Stable Audio 3 avant de générer.')
+      throw new Error('Importe un modèle Stable Audio 3 avant de générer.')
     }
     const job = await createStableAudioRadioGeneration({
       sft_id: request.sftId,
@@ -101,33 +139,34 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
   }
 
   const engineCopy = stableAudioRuntimeReady === false
-    ? 'Le runtime Stable Audio 3 MLX n’est pas disponible.'
-    : 'Lecteur navigateur prêt · tes SFT restent sur ta machine.'
+    ? 'Moteur hors ligne · démarre ton API locale pour générer.'
+    : stableAudioRuntimeReady === null ? 'Connexion au moteur local…' : 'Moteur connecté · tes modèles restent enregistrés sur ta machine, même après rechargement.'
 
   return <div className="radio-page" data-testid="generative-radio-page">
     <header className="radio-page-header">
-      <button className="radio-page-back" type="button" onClick={handleBack} aria-label="Retourner au player">← RADIO</button>
-      <div className="radio-page-brand"><strong>AI RADIO</strong><span>STABLE AUDIO 3 / LOCAL PLAYER</span></div>
-      <span className="radio-page-mark">BROWSER-FIRST</span>
+      <button className="radio-page-back" type="button" onClick={handleBack} aria-label="Retourner au player">← Retour</button>
+      <div className="radio-page-brand"><strong><i aria-hidden="true">∿</i> radio.studio</strong><span>Un espace pour le son</span></div>
+      <span className={`radio-page-mark ${stableAudioRuntimeReady ? 'is-connected' : ''}`}><i aria-hidden="true" />{stableAudioRuntimeReady ? 'Moteur connecté' : stableAudioRuntimeReady === null ? 'Connexion…' : 'Moteur hors ligne'}</span>
     </header>
 
     <main className="radio-page-main">
       <div className="radio-page-intro">
-        <div><span>GENERATIVE RADIO / LOCAL SFT PLAYER</span><h1>Une radio qui évolue avec toi.</h1></div>
-        <p>{engineCopy} Importe un checkpoint `.safetensors`, donne une direction sonore, puis laisse Stable Audio 3 construire un flux endless : chaque morceau est généré indépendamment, tandis que seul l’arc procédural partagé évolue sur environ six minutes, sans réinjecter l’audio précédent.</p>
+        <div><span>TON STUDIO DE RADIO GÉNÉRATIVE</span><h1>Une radio qui évolue avec toi.</h1></div>
+        <p>Choisis une matière sonore. Dessine son évolution.<br />Laisse la musique prendre le relais.</p>
       </div>
+      <div className="radio-engine-notice" role="status"><span>{engineCopy}</span><span>Stable Audio 3 · Audio local</span></div>
       <GenerativeRadio
         availableModels={models}
         availableModelVariants={modelVariants}
-        onClearModel={() => setSelectedModel(null)}
+        onClearModel={handleClearModel}
         onGenerate={handleGenerate}
         onImportModel={handleImportModel}
         onReleaseAudioUrl={releaseAudioUrl}
-        onSelectModel={setSelectedModel}
+        onSelectModel={handleSelectModel}
         selectedModel={selectedModel}
       />
     </main>
 
-    <footer className="radio-page-footer"><span>LOCAL MODEL / STABLE AUDIO 3 MEDIUM</span><span>FP16 · INT8 · INT4 · INT2 · INT1 / TESTABLE</span><span>FLUX ENDLESS / ARC 6 MIN</span><span>OPEN SOURCE PLAYER</span></footer>
+    <footer className="radio-page-footer"><span>radio.studio — Un son qui suit tes idées.</span><span>Génération locale · Open source</span></footer>
   </div>
 }

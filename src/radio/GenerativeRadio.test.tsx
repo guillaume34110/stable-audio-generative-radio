@@ -16,10 +16,10 @@ describe('GenerativeRadio', () => {
     expect(screen.getByRole('heading', { name: 'Façonne ta radio' })).toBeInTheDocument()
     expect(screen.getByText('00:00 PRÊT')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /Mots-clés/ })).toHaveValue('minimal, minimal techno')
-    expect(screen.getByRole('slider', { name: /Influence SFT/ })).toHaveValue('100')
+    expect(screen.getByRole('slider', { name: /Influence du modèle/ })).toHaveValue('100')
   })
 
-  it('imports a valid Stable Audio 3 SFT without exposing the local file path', async () => {
+  it('imports a valid Stable Audio 3 model without exposing the local file path', async () => {
     const adapter = {
       id: 'a'.repeat(32),
       filename: 'my-style.safetensors',
@@ -32,12 +32,12 @@ describe('GenerativeRadio', () => {
     render(<GenerativeRadio onImportModel={onImportModel} />)
     const file = new File(['weights'], 'my-style.safetensors', { type: 'application/octet-stream' })
 
-    fireEvent.change(screen.getByLabelText('Charger un SFT Stable Audio 3'), { target: { files: [file] } })
+    fireEvent.change(screen.getByLabelText('Charger un modèle Stable Audio 3'), { target: { files: [file] } })
 
     await waitFor(() => expect(onImportModel).toHaveBeenCalledWith(file))
     expect(await screen.findByText('my-style.safetensors', { selector: 'strong' })).toBeInTheDocument()
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Retirer le SFT sélectionné' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retirer le modèle sélectionné' })).toBeInTheDocument()
     expect(screen.queryByText('/Users/')).not.toBeInTheDocument()
   })
 
@@ -122,6 +122,53 @@ describe('GenerativeRadio', () => {
     expect(screen.getByText(`${activeTagCount}/10 TAGS`)).toBeInTheDocument()
   })
 
+  it('keeps fixed tags as a base and samples optional tags from the user field', async () => {
+    const fixedTags = ['minimal techno', 'warehouse anchor']
+    const userTags = [
+      'minimal techno',
+      'dry kick',
+      'metallic hats',
+      'sub bass',
+      'warehouse reverb',
+      'tape saturation',
+      'rolling groove',
+      'night drive',
+      'neon tension',
+      'slow filter motion',
+    ]
+    window.localStorage.setItem(RADIO_FIXED_TAGS_STORAGE_KEY, JSON.stringify(fixedTags))
+    const onGenerate = vi.fn()
+      .mockResolvedValueOnce({ audioUrl: 'blob:fixed-first', id: 'f'.repeat(16), durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:fixed-second', id: 'g'.repeat(16), durationSeconds: 240 })
+    const selectedModel = {
+      id: 'h'.repeat(32),
+      filename: 'radio.safetensors',
+      size_bytes: 2048,
+      created_at: '2026-09-10T00:00:00',
+      format: 'safetensors' as const,
+      base_model: 'stable-audio-3-medium-mlx',
+    }
+    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Mots-clés/ }), { target: { value: userTags.join(', ') } })
+    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+
+    const userPool = new Set(userTags)
+    const fixedSet = new Set(fixedTags)
+    const requests = onGenerate.mock.calls.map(([request]) => request as { keywords: string; fixedTags?: string[] })
+    for (const request of requests) {
+      const generatedTags = request.keywords.split(',').map((tag: string) => tag.trim()).filter(Boolean)
+      const optionalTags = generatedTags.filter((tag: string) => !fixedSet.has(tag))
+      expect(request.fixedTags).toEqual(fixedTags)
+      expect(generatedTags.slice(0, fixedTags.length)).toEqual(fixedTags)
+      expect(optionalTags.length).toBeGreaterThan(0)
+      expect(optionalTags.every((tag: string) => userPool.has(tag))).toBe(true)
+      expect(new Set(generatedTags).size).toBe(generatedTags.length)
+    }
+    expect(requests[0]!.keywords).not.toBe(requests[1]!.keywords)
+  })
+
   it('exposes the real-time pro monitoring controls without changing the generated recipe', () => {
     render(<GenerativeRadio />)
 
@@ -139,13 +186,13 @@ describe('GenerativeRadio', () => {
     expect(screen.getByRole('slider', { name: /Plafond/ })).toBeDisabled()
   })
 
-  it('can launch the persisted Berlin INT8 variant without a second SFT upload', async () => {
+  it('can launch the persisted Berlin INT8 variant without a second model upload', async () => {
     const onGenerate = vi.fn().mockResolvedValue({ audioUrl: 'blob:int8', id: '8'.repeat(16), durationSeconds: 120 })
     const modelVariants = [
       {
         id: 'fp16' as const,
-        label: 'FP16 · SFT importé',
-        description: 'SFT choisi dans la page, précision native',
+        label: 'FP16 · modèle importé',
+        description: 'Modèle choisi dans la page, précision native',
         available: true,
         bits: null,
         size_bytes: null,
@@ -154,8 +201,8 @@ describe('GenerativeRadio', () => {
       },
       {
         id: 'int8' as const,
-        label: 'INT8 · Berlin SFT fusionné',
-        description: 'DiT Medium quantifié INT8 · SFT Berlin intégré',
+        label: 'INT8 · modèle Berlin fusionné',
+        description: 'DiT Medium quantifié INT8 · modèle Berlin intégré',
         available: true,
         bits: 8,
         size_bytes: 1_482_100_000,
@@ -164,8 +211,8 @@ describe('GenerativeRadio', () => {
       },
       {
         id: 'int4' as const,
-        label: 'INT4 · Berlin SFT fusionné',
-        description: 'DiT Medium quantifié INT4 · SFT Berlin intégré',
+        label: 'INT4 · modèle Berlin fusionné',
+        description: 'DiT Medium quantifié INT4 · modèle Berlin intégré',
         available: true,
         bits: 4,
         size_bytes: 794_100_000,
@@ -176,7 +223,7 @@ describe('GenerativeRadio', () => {
     render(<GenerativeRadio onGenerate={onGenerate} availableModelVariants={modelVariants} />)
 
     fireEvent.change(screen.getByLabelText(/Variante du modèle/), { target: { value: 'int8' } })
-    expect(screen.getByText('INT8 · Berlin SFT fusionné', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByText('INT8 · modèle Berlin fusionné', { selector: 'strong' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
 
     await waitFor(() => expect(onGenerate).toHaveBeenCalled())
@@ -219,7 +266,7 @@ describe('GenerativeRadio', () => {
     expect(continuation.durationSeconds).toBeLessThanOrEqual(360)
     expect(screen.getByRole('status')).toHaveTextContent('Morceau indépendant prêt')
     expect(screen.getByTestId('current-radio-track')).toHaveTextContent('01 · FLUX ACTIF')
-    for (const label of ['KEY', 'BPM', 'DURÉE', 'MODE', 'ÉVOLUTION', 'DÉRIVE', 'ÉNERGIE', 'MATIÈRE', 'SFT', 'SEED', 'PROMPT UTILISÉ', 'GENERATION ID']) {
+    for (const label of ['KEY', 'BPM', 'DURÉE', 'MODE', 'ÉVOLUTION', 'DÉRIVE', 'ÉNERGIE', 'MATIÈRE', 'MODÈLE', 'SEED', 'PROMPT UTILISÉ', 'GENERATION ID']) {
       expect(screen.getByTestId('current-radio-track')).toHaveTextContent(label)
     }
     expect(screen.getByTestId('current-radio-track')).toHaveTextContent('PROGRAMME')
@@ -233,7 +280,7 @@ describe('GenerativeRadio', () => {
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('MODE')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('INDÉPENDANT')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('ÉVOLUTION')
-    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('SFT')
+    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('MODÈLE')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent(String(continuation.seed))
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent(continuation.modelVariant.toUpperCase())
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('GENERATION ID · ' + 'd'.repeat(16))
@@ -257,6 +304,38 @@ describe('GenerativeRadio', () => {
     expect(manual.loraStrength).toBeGreaterThanOrEqual(0)
     expect(manual.loraStrength).toBeLessThanOrEqual(1)
     expect(manual.seed).toBeGreaterThanOrEqual(0)
+  })
+
+  it('reserves a new seed for every successive buffered programme', async () => {
+    const onGenerate = vi.fn()
+      .mockResolvedValueOnce({ audioUrl: 'blob:seed-first', id: 'a'.repeat(16), durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:seed-second', id: 'b'.repeat(16), durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:seed-third', id: 'c'.repeat(16), durationSeconds: 240 })
+    const selectedModel = {
+      id: 'd'.repeat(32),
+      filename: 'berlin-techno.safetensors',
+      size_bytes: 2048,
+      created_at: '2026-09-10T00:00:00',
+      format: 'safetensors' as const,
+      base_model: 'stable-audio-3-medium-mlx',
+    }
+    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+
+    const audio = document.querySelector('audio.radio-audio') as HTMLAudioElement
+    expect(audio).toBeInTheDocument()
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: vi.fn(() => Promise.resolve()),
+    })
+    fireEvent.ended(audio)
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
+
+    const requests = onGenerate.mock.calls.map(([request]) => request as { seed?: number; continuationFromId?: string | null })
+    expect(new Set(requests.map((request) => request.seed)).size).toBe(3)
+    expect(requests[2]!.continuationFromId).toBe('b'.repeat(16))
   })
 
   it('keeps the form-owned error visible and focuses keywords when empty', () => {
@@ -349,7 +428,7 @@ describe('GenerativeRadio', () => {
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
 
     const next = screen.getByTestId('next-radio-track')
-    for (const label of ['KEY', 'BPM', 'DURÉE', 'MODE', 'ÉVOLUTION', 'DÉRIVE', 'ÉNERGIE', 'MATIÈRE', 'SFT', 'SEED', 'PROMPT UTILISÉ', 'GENERATION ID']) {
+    for (const label of ['KEY', 'BPM', 'DURÉE', 'MODE', 'ÉVOLUTION', 'DÉRIVE', 'ÉNERGIE', 'MATIÈRE', 'MODÈLE', 'SEED', 'PROMPT UTILISÉ', 'GENERATION ID']) {
       expect(next).toHaveTextContent(label)
     }
     expect(next).toHaveTextContent('BUILDING / 4%')
@@ -445,7 +524,7 @@ describe('GenerativeRadio', () => {
     fireEvent.click(openBtn)
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByText('Catalogue de tags & structure')).toBeInTheDocument()
+    expect(screen.getByText('Vocabulaire de tags & structure')).toBeInTheDocument()
 
     // Filter by search
     const searchInput = screen.getByPlaceholderText(/Filtrer les tags/i)

@@ -61,6 +61,10 @@ const radioApiBaseUrl = (import.meta.env.VITE_RADIO_API_URL ?? '').replace(/\/$/
 
 const radioApiUrl = (path: string): string => `${radioApiBaseUrl}${path}`
 
+const normalizeModelCopy = (copy: string): string => copy
+  .replace(/\bBerlin SFT\b/g, 'modèle Berlin')
+  .replace(/\bSFT\b/g, 'modèle')
+
 const stableAudioRadioResponse = async (path: string, init?: RequestInit): Promise<Response> => {
   try {
     return await fetch(radioApiUrl(path), { ...init, credentials: 'include' })
@@ -80,7 +84,7 @@ const stableAudioRadioApi = async <T>(path: string, init?: RequestInit): Promise
         ? (parsed as { detail?: unknown }).detail ?? raw
         : raw
     } catch { /* plain-text server error */ }
-    const message = typeof detail === 'string' ? detail : JSON.stringify(detail)
+    const message = normalizeModelCopy(typeof detail === 'string' ? detail : JSON.stringify(detail))
     throw new Error(message || `Stable Audio 3 failed (${response.status}).`)
   }
   if (response.status === 204) return undefined as T
@@ -95,7 +99,13 @@ export const listStableAudioRadioSfts = async (): Promise<StableAudioRadioCatalo
     engine: response.engine ?? 'stable-audio-3-medium-mlx',
     runtime_ready: response.runtime_ready === true,
     sfts: Array.isArray(response.sfts) ? response.sfts : [],
-    model_variants: Array.isArray(response.model_variants) ? response.model_variants : [],
+    model_variants: Array.isArray(response.model_variants)
+      ? response.model_variants.map((variant) => ({
+        ...variant,
+        label: normalizeModelCopy(variant.label),
+        description: normalizeModelCopy(variant.description),
+      }))
+      : [],
   }
 }
 
@@ -130,7 +140,7 @@ export const waitForStableAudioRadioGeneration = async (
     const job = await stableAudioRadioJob(generationId)
     onUpdate?.(job)
     if (job.status === 'completed') return job
-    if (job.status === 'failed') throw new Error(job.message || 'Stable Audio 3 generation failed.')
+    if (job.status === 'failed') throw new Error(normalizeModelCopy(job.message || 'Stable Audio 3 generation failed.'))
     await new Promise<void>((resolve) => window.setTimeout(resolve, 900))
   }
   throw new Error('Stable Audio 3 generation timed out.')
