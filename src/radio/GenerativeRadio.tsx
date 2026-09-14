@@ -1149,6 +1149,8 @@ export const GenerativeRadio = ({
   const startListening = () => {
     if (!keywords.trim() && fixedTags.length === 0) { void generateNext(); return }
     if (setupNeeded) { setError(runtimeReady !== true ? engineMessage || 'Connecte le moteur local avec ENGINE.' : 'Choisis une variante installée ou importe ton modèle.'); document.getElementById('machine-model-variant')?.focus(); return }
+    const browserWindow = window as Window & typeof globalThis & { webkitAudioContext?: unknown }
+    if (browserWindow.AudioContext || browserWindow.webkitAudioContext) void ensureRadioDsp()?.resume()
     void generateNext(true)
   }
   const reconnect = async () => {
