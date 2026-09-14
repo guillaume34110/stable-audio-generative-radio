@@ -91,6 +91,8 @@ type RadioRecipe = {
 
 type RadioGenerationSettings = Omit<RadioRecipe, 'tags' | 'keywordPool' | 'seed'> & {
   customSeed?: number
+  sftFile?: File | null
+  sftId?: string | null
 }
 
 type ModelImportState = 'idle' | 'uploading' | 'ready' | 'error'
@@ -583,12 +585,12 @@ export const GenerativeRadio = ({
   const generateNextRef = useRef<(autoplay?: boolean) => Promise<void>>(async () => undefined)
   const autoplayAfterGenerationRef = useRef(false)
   const variationCounterRef = useRef(0)
+  const currentTrackRef = useRef<RadioTrack | null>(null)
   const continuationTrackRef = useRef<RadioTrack | null>(null)
   const continuationGeneratingRef = useRef(false)
   const programSessionRef = useRef(0)
   const playbackEndedRef = useRef(false)
   const latestGenerationSettingsRef = useRef<RadioGenerationSettings | null>(null)
-  const settingsRevisionRef = useRef(0)
 
   useEffect(() => {
     if (selectedModel) {
@@ -597,12 +599,6 @@ export const GenerativeRadio = ({
       setStatus(`Modèle Stable Audio 3 sélectionné · ${selectedModel.filename}`)
     }
   }, [selectedModel])
-
-  useEffect(() => {
-    variationCounterRef.current = 0
-    settingsRevisionRef.current += 1
-    setActiveRecipe(null)
-  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile, steps, cfg, apg, seedInput, negativePrompt, phases, fixedTags])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -658,8 +654,8 @@ export const GenerativeRadio = ({
   const selectedAdapter = selectedModel ?? localModel
   latestGenerationSettingsRef.current = {
     keywords,
-    fixedTags,
-    phases,
+    fixedTags: [...fixedTags],
+    phases: [...phases],
     bpm,
     drift,
     energy,
@@ -673,6 +669,8 @@ export const GenerativeRadio = ({
     apg,
     negativePrompt,
     customSeed: seedInput.trim() !== '' && Number.isFinite(Number(seedInput)) ? Number(seedInput) : undefined,
+    sftFile: modelVariant === 'fp16' ? sftFile : null,
+    sftId: modelVariant === 'fp16' ? selectedAdapter?.id ?? null : null,
   }
   const modelOptions = useMemo(() => {
     const options = selectedAdapter ? [selectedAdapter, ...availableModels] : [...availableModels]
@@ -852,9 +850,11 @@ export const GenerativeRadio = ({
 
   async function prefetchContinuation(sourceTrack: RadioTrack, sourceRecipe: RadioRecipe, session: number): Promise<void> {
     if (continuationGeneratingRef.current || continuationTrackRef.current || !onGenerate || typeof sourceTrack.id !== 'string') return
-    const latestSettings = latestGenerationSettingsRef.current
-    if (!latestSettings?.keywords.trim() && (!latestSettings?.fixedTags || latestSettings.fixedTags.length === 0)) return
-    const requestRevision = settingsRevisionRef.current
+    // Snapshot the controls when this generation enters the queue. Later edits
+    // stay pending for the following slot so an already-running request can
+    // finish without replacing audio that is about to play.
+    const generationSettings = latestGenerationSettingsRef.current
+    if (!generationSettings?.keywords.trim() && (!generationSettings?.fixedTags || generationSettings.fixedTags.length === 0)) return
 
     continuationGeneratingRef.current = true
     setContinuationGenerating(true)
@@ -864,7 +864,7 @@ export const GenerativeRadio = ({
     // can become active while this request is finishing, so allocating here
     // prevents the following prefetch from reusing its seed.
     variationCounterRef.current = variation + 1
-    const recipe = buildContinuationRecipe(sourceRecipe, variation, latestSettings)
+    const recipe = buildContinuationRecipe(sourceRecipe, variation, generationSettings)
     const previewTrack = trackFromRecipe(recipe, variation, 'independent')
     setContinuationPreview(previewTrack)
     const request: RadioGenerationRequest = {
@@ -879,8 +879,8 @@ export const GenerativeRadio = ({
       durationSeconds: recipe.durationSeconds,
       loraStrength: recipe.loraStrength,
       modelVariant: recipe.modelVariant,
-      sftFile: recipe.modelVariant === 'fp16' ? sftFile : null,
-      sftId: recipe.modelVariant === 'fp16' ? selectedAdapter?.id ?? null : null,
+      sftFile: recipe.modelVariant === 'fp16' ? generationSettings.sftFile ?? null : null,
+      sftId: recipe.modelVariant === 'fp16' ? generationSettings.sftId ?? null : null,
       seed: recipe.seed,
       steps: recipe.steps,
       cfg: recipe.cfg,
@@ -889,15 +889,13 @@ export const GenerativeRadio = ({
       continuationFromId: sourceTrack.id,
     }
     let completedTrack: RadioTrack | null = null
-    let staleSettings = false
     try {
       setStatus('Stable Audio 3 prépare un morceau indépendant…')
       const result = await onGenerate(request, (nextProgress) => {
         if (session === programSessionRef.current) setGenerationProgress(clamp(nextProgress, 0, 100))
       })
       if (!result?.audioUrl) throw new Error('Le moteur n’a pas renvoyé le morceau indépendant.')
-      staleSettings = requestRevision !== settingsRevisionRef.current
-      if (session !== programSessionRef.current || staleSettings) {
+      if (session !== programSessionRef.current) {
         onReleaseAudioUrl?.(result.audioUrl)
         return
       }
@@ -906,8 +904,20 @@ export const GenerativeRadio = ({
       setContinuationTrack(completedTrack)
       setContinuationPreview(null)
       setStatus('Morceau indépendant prêt · transition continue armée.')
+      if (playbackEndedRef.current && currentTrackRef.current?.id === sourceTrack.id) {
+        // Let the request clean up its in-flight flag before arming the next
+        // prefetch. This keeps a late result from stopping the radio between
+        // two programmes.
+        const preparedTrack = completedTrack
+        window.setTimeout(() => {
+          if (session !== programSessionRef.current) return
+          if (continuationTrackRef.current?.id !== preparedTrack.id) return
+          if (currentTrackRef.current?.id !== sourceTrack.id || !playbackEndedRef.current) return
+          activateContinuation(preparedTrack)
+        }, 0)
+      }
     } catch {
-      if (session === programSessionRef.current && !staleSettings) {
+      if (session === programSessionRef.current) {
         setContinuationTrack(null)
         setContinuationPreview(null)
         setStatus('Morceau indépendant indisponible · la lecture reste continue.')
@@ -921,25 +931,6 @@ export const GenerativeRadio = ({
     }
   }
 
-  useEffect(() => {
-    const sourceTrack = currentTrack
-    if (!sourceTrack || typeof sourceTrack.id !== 'string') return
-
-    const preparedTrack = continuationTrackRef.current
-    if (preparedTrack) {
-      onReleaseAudioUrl?.(preparedTrack.audioUrl)
-      continuationTrackRef.current = null
-      setContinuationTrack(null)
-      setContinuationPreview(null)
-    }
-    const session = programSessionRef.current
-    window.setTimeout(() => {
-      if (session === programSessionRef.current && currentTrack?.id === sourceTrack.id && !continuationTrackRef.current) {
-        void prefetchContinuation(sourceTrack, sourceTrack.recipe, session)
-      }
-    }, 0)
-  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile, phases, fixedTags, steps, cfg, apg, seedInput, negativePrompt])
-
   function activateContinuation(track: RadioTrack): void {
     if (!track.audioUrl) return
     playbackEndedRef.current = false
@@ -947,6 +938,7 @@ export const GenerativeRadio = ({
     continuationTrackRef.current = null
     setContinuationTrack(null)
     setContinuationPreview(null)
+    currentTrackRef.current = track
     setCurrentTrack(track)
     setPosition(0)
     setPlaying(true)
@@ -1039,6 +1031,7 @@ export const GenerativeRadio = ({
       variationCounterRef.current = variation + 1
       const nextTrack = trackFromResult(result, recipe, variation)
       const previousTrack = currentTrack
+      currentTrackRef.current = nextTrack
       setCurrentTrack(nextTrack)
       if (previousTrack?.id !== nextTrack.id) {
         window.setTimeout(() => releaseTrackAudio(previousTrack), 0)

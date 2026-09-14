@@ -394,10 +394,10 @@ describe('GenerativeRadio', () => {
     expect(keywords).toHaveFocus()
   })
 
-  it('rebuilds the buffered next programme with the latest generation settings', async () => {
+  it('keeps the buffered next programme intact and applies edits after the handoff', async () => {
     const onGenerate = vi.fn()
       .mockResolvedValueOnce({ audioUrl: 'blob:first-settings', id: '1'.repeat(16), durationSeconds: 240 })
-      .mockResolvedValueOnce({ audioUrl: 'blob:stale-settings', id: '2'.repeat(16), durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:buffered-settings', id: '2'.repeat(16), durationSeconds: 240 })
       .mockResolvedValueOnce({ audioUrl: 'blob:updated-settings', id: '3'.repeat(16), durationSeconds: 240 })
     const selectedModel = {
       id: '4'.repeat(32),
@@ -413,23 +413,40 @@ describe('GenerativeRadio', () => {
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
 
     fireEvent.change(screen.getByLabelText(/Tempo/), { target: { value: '138' } })
-    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
 
-    const updated = onGenerate.mock.calls[2]![0]
-    expect(updated).toEqual(expect.objectContaining({
-      bpm: 138,
+    expect(onGenerate.mock.calls[1]![0]).toEqual(expect.objectContaining({
+      bpm: 124,
       drift: 26,
       continuationFromId: '1'.repeat(16),
     }))
-    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('138')
+    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('124')
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Ta direction sonore/ }), { target: { value: 'future pad, glass percussion' } })
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+    expect(onGenerate.mock.calls[1]![0].keywords).not.toContain('future pad')
+
+    const audio = document.querySelector('audio.radio-audio') as HTMLAudioElement
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: vi.fn(() => Promise.resolve()),
+    })
+    fireEvent.ended(audio)
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
+    expect(onGenerate.mock.calls[2]![0]).toEqual(expect.objectContaining({
+      bpm: 138,
+      drift: 26,
+      keywords: 'future pad, glass percussion',
+      continuationFromId: '2'.repeat(16),
+    }))
   })
 
-  it('discards an in-flight next programme when its settings become stale', async () => {
-    const staleNext = { audioUrl: 'blob:stale-in-flight', id: '6'.repeat(16), durationSeconds: 240 }
-    let resolveStaleNext!: (result: typeof staleNext) => void
+  it('lets an in-flight next programme finish before applying queued settings', async () => {
+    const bufferedNext = { audioUrl: 'blob:buffered-in-flight', id: '6'.repeat(16), durationSeconds: 240 }
+    let resolveBufferedNext!: (result: typeof bufferedNext) => void
     const onGenerate = vi.fn()
       .mockResolvedValueOnce({ audioUrl: 'blob:first-in-flight', id: '5'.repeat(16), durationSeconds: 240 })
-      .mockImplementationOnce(() => new Promise<typeof staleNext>((resolve) => { resolveStaleNext = resolve }))
+      .mockImplementationOnce(() => new Promise<typeof bufferedNext>((resolve) => { resolveBufferedNext = resolve }))
       .mockResolvedValueOnce({ audioUrl: 'blob:updated-in-flight', id: '7'.repeat(16), durationSeconds: 240 })
     const selectedModel = {
       id: '8'.repeat(32),
@@ -444,12 +461,60 @@ describe('GenerativeRadio', () => {
     startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
     fireEvent.change(screen.getByLabelText(/Tempo/), { target: { value: '140' } })
-    resolveStaleNext(staleNext)
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+    resolveBufferedNext(bufferedNext)
 
+    await waitFor(() => expect(screen.getByTestId('next-radio-track')).toHaveTextContent('READY'))
+    expect(onGenerate.mock.calls[1]![0]).toEqual(expect.objectContaining({
+      bpm: 124,
+      continuationFromId: '5'.repeat(16),
+    }))
+
+    const audio = document.querySelector('audio.radio-audio') as HTMLAudioElement
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: vi.fn(() => Promise.resolve()),
+    })
+    fireEvent.ended(audio)
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
     expect(onGenerate.mock.calls[2]![0]).toEqual(expect.objectContaining({
       bpm: 140,
-      continuationFromId: '5'.repeat(16),
+      continuationFromId: '6'.repeat(16),
+    }))
+  })
+
+  it('resumes the radio automatically when the buffered programme finishes late', async () => {
+    const bufferedNext = { audioUrl: 'blob:late-buffered', id: '9'.repeat(16), durationSeconds: 240 }
+    let resolveBufferedNext!: (result: typeof bufferedNext) => void
+    const onGenerate = vi.fn()
+      .mockResolvedValueOnce({ audioUrl: 'blob:late-first', id: '8'.repeat(16), durationSeconds: 240 })
+      .mockImplementationOnce(() => new Promise<typeof bufferedNext>((resolve) => { resolveBufferedNext = resolve }))
+      .mockResolvedValueOnce({ audioUrl: 'blob:late-third', id: 'a'.repeat(16), durationSeconds: 240 })
+    const selectedModel = {
+      id: 'b'.repeat(32),
+      filename: 'berlin-techno.safetensors',
+      size_bytes: 2048,
+      created_at: '2026-09-10T00:00:00',
+      format: 'safetensors' as const,
+      base_model: 'stable-audio-3-medium-mlx',
+    }
+    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+
+    startRadio()
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+    const audio = document.querySelector('audio.radio-audio') as HTMLAudioElement
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: vi.fn(() => Promise.resolve()),
+    })
+    fireEvent.ended(audio)
+    expect(screen.getByRole('status')).toHaveTextContent('Fin du programme')
+
+    resolveBufferedNext(bufferedNext)
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
+    expect(screen.getByRole('heading', { name: 'minimal Relay' })).toBeInTheDocument()
+    expect(onGenerate.mock.calls[2]![0]).toEqual(expect.objectContaining({
+      continuationFromId: '9'.repeat(16),
     }))
   })
 
@@ -482,8 +547,11 @@ describe('GenerativeRadio', () => {
     await waitFor(() => expect(next).toHaveTextContent('READY'))
   })
 
-  it('exposes model diffusion settings and forwards them to generation', async () => {
-    const onGenerate = vi.fn().mockResolvedValue({ audioUrl: 'blob:expert', id: 'e'.repeat(16), durationSeconds: 120 })
+  it('keeps diffusion settings stable for an in-flight slot and uses edits for the following slot', async () => {
+    const onGenerate = vi.fn()
+      .mockResolvedValueOnce({ audioUrl: 'blob:expert-first', id: 'e'.repeat(16), durationSeconds: 120 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:expert-second', id: 'f'.repeat(16), durationSeconds: 120 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:expert-third', id: 'g'.repeat(16), durationSeconds: 120 })
     const selectedModel = {
       id: 'd'.repeat(32),
       filename: 'berlin-techno.safetensors',
@@ -512,8 +580,20 @@ describe('GenerativeRadio', () => {
     }))
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
     fireEvent.change(screen.getByRole('slider', { name: /^STEPS$/ }), { target: { value: '19' } })
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+    expect(onGenerate.mock.calls[1]![0]).toEqual(expect.objectContaining({ steps: 14 }))
+
+    const audio = document.querySelector('audio.radio-audio') as HTMLAudioElement
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: vi.fn(() => Promise.resolve()),
+    })
+    fireEvent.ended(audio)
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
-    expect(onGenerate.mock.calls[2]![0]).toEqual(expect.objectContaining({ steps: 19 }))
+    expect(onGenerate.mock.calls[2]![0]).toEqual(expect.objectContaining({
+      steps: 19,
+      continuationFromId: 'f'.repeat(16),
+    }))
   })
 
   it('persists keywords to localStorage and restores them across mounts', () => {
