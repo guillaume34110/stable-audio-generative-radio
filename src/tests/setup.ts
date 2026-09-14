@@ -12,3 +12,20 @@ Object.defineProperty(globalThis, 'localStorage', {
     setItem: (key: string, value: string) => { storage.set(key, String(value)) },
   } satisfies Storage,
 })
+
+// jsdom has neither a native dialog top layer nor an audio decoder.
+// These stubs cover component state; focus containment and playback need a browser.
+Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+  configurable: true,
+  value(this: HTMLDialogElement) { this.setAttribute('open', '') },
+})
+Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+  configurable: true,
+  value(this: HTMLDialogElement) { this.removeAttribute('open') },
+})
+Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+  configurable: true,
+  value: () => Promise.resolve(),
+})
+Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value: () => {} })
+Object.defineProperty(HTMLMediaElement.prototype, 'load', { configurable: true, value: () => {} })

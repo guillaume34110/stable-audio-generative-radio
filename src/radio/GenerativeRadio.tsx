@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type ReactElement } from 'react'
+import { RadioDialog } from './RadioDialog'
 import type {
   StableAudioRadioAdapter,
   StableAudioRadioModelVariant,
@@ -446,6 +447,8 @@ const percentStyle = (value: number): CSSProperties => ({ '--radio-fill': `${val
 const defaultRadioDspMeter: RadioDspMeter = { inputPeakDb: -60, outputPeakDb: -60, gainReductionDb: 0 }
 
 type GenerativeRadioProps = {
+  runtimeReady?: boolean | null
+  onReconnect?: () => Promise<void>
   availableModels?: readonly StableAudioRadioAdapter[]
   availableModelVariants?: readonly StableAudioRadioModelVariant[]
   initialFixedTags?: readonly string[]
@@ -459,6 +462,8 @@ type GenerativeRadioProps = {
 }
 
 export const GenerativeRadio = ({
+  runtimeReady = true,
+  onReconnect,
   availableModels = [],
   availableModelVariants = [],
   initialFixedTags: initialFixedTagsProp,
@@ -470,6 +475,9 @@ export const GenerativeRadio = ({
   onSelectModel,
   selectedModel,
 }: GenerativeRadioProps): ReactElement => {
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
+  const [settingsSection, setSettingsSection] = useState<'sound' | 'model'>('sound')
   const [keywords, setKeywords] = useState(initialKeywords)
   const [phases, setPhases] = useState<string[]>(() => {
     if (initialPhasesProp && initialPhasesProp.length > 0) return [...initialPhasesProp]
@@ -632,9 +640,6 @@ export const GenerativeRadio = ({
   const bufferAdvance = currentTrack ? `${formatClock(remainingSeconds)} RESTANT` : '00:00 PRÊT'
   const continuationBufferState = continuationGenerating ? 'MORCEAU INDÉPENDANT EN CALCUL' : continuationTrack ? 'MORCEAU INDÉPENDANT PRÊT' : currentTrack ? 'PROCHAIN MORCEAU À PRÉPARER' : 'EN ATTENTE'
   const displayedTags = activeRecipe?.tags ?? keywordTokens
-  const displayedTagPool = activeRecipe?.keywordPool ?? keywordTokens
-  const tagCountLabel = activeRecipe ? `${displayedTags.length}/${displayedTagPool.length} TAGS` : `${displayedTagPool.length} TAGS`
-  const displayedEvolution = currentTrack?.evolution ?? activeRecipe?.evolution ?? evolution
   const activeQueueTrack = currentTrack ?? (generating && activeRecipe
     ? trackFromRecipe(activeRecipe, variationCounterRef.current, 'programme')
     : null)
@@ -768,26 +773,7 @@ export const GenerativeRadio = ({
     if (track?.audioUrl) onReleaseAudioUrl?.(track.audioUrl)
   }
 
-  const handleStart = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault()
-    if (!keywords.trim()) {
-      setError('Ajoute au moins un mot-clé pour lancer la radio.')
-      setStatus('La recette est incomplète.')
-      keywordsRef.current?.focus()
-      return
-    }
-    if (!currentTrack) {
-      await ensureRadioDsp()?.resume()
-      autoplayAfterGenerationRef.current = true
-      await generateNextRef.current(true)
-      return
-    }
-    setError(null)
-    await ensureRadioDsp()?.resume()
-    setPlaying(true)
-    void audioRef.current?.play().catch(() => setError('La sortie audio est bloquée par le navigateur.'))
-    setStatus(`Programme actif · ${bpm} BPM cible · évolution interne en cours.`)
-  }
+
 
   const togglePlayback = async (): Promise<void> => {
     if (!keywords.trim() && fixedTags.length === 0) {
@@ -1253,33 +1239,86 @@ export const GenerativeRadio = ({
     })
   }, [modalSearch])
 
-  return <section className={`radio-widget ${playing ? 'is-playing' : ''}`} aria-labelledby="radio-widget-heading" data-testid="generative-radio">
-    <header className="radio-widget-topline">
-      <div className="radio-live-label"><i aria-hidden="true" /> <span>SESSION</span><small>{playing ? 'EN ÉCOUTE' : generating ? 'COMPOSITION' : 'À COMPOSER'}</small></div>
-      <div className="radio-engine-label"><span>STABLE AUDIO 3 / {modelVariant.toUpperCase()}</span><b>LOCAL</b></div>
-    </header>
+  const needsModel = !selectedModelVariant?.available || (modelVariant === 'fp16' && !selectedAdapter && !sftFile)
+  const setupNeeded = runtimeReady !== true || needsModel
+  const openSettings = (section: 'sound' | 'model') => { setSettingsSection(section); setSettingsOpen(true) }
+  const startListening = () => {
+    if (!keywords.trim() && fixedTags.length === 0) { void generateNext(); return }
+    if (setupNeeded) { openSettings('model'); return }
+    void generateNext(true)
+  }
+  const reconnect = async () => {
+    if (!onReconnect || reconnecting) return
+    setReconnecting(true)
+    try { await onReconnect() } finally { setReconnecting(false) }
+  }
 
-    <div className="radio-widget-grid">
-      <div className="radio-player-column">
-        <div className="radio-model-frame radio-sft-frame">
-          <div className="radio-sft-visual" aria-hidden="true">
-            <svg className="radio-sound-sculpture" viewBox="0 0 360 360" aria-hidden="true">
-              {Array.from({ length: 38 }, (_, index) => {
-                const x = 46 + index * 7.25
-                const height = 48 + Math.pow(Math.sin(index / 37 * Math.PI), 1.3) * 190
-                const offset = Math.sin(index * .19) * 28
-                return <line key={index} x1={x} x2={x} y1={180 - height / 2 + offset} y2={180 + height / 2 + offset} stroke={index < 19 ? '#315de0' : '#668aef'} strokeWidth="3" strokeLinecap="round" />
-              })}
-            </svg>
-            <div className="radio-sft-mark"><strong>Sound in motion.</strong><span>STABLE AUDIO 3 / {modelVariant.toUpperCase()}</span></div>
-            <div className="radio-sft-wave"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
-            <span className="radio-sft-corner">{steps} STEPS</span>
+  return <section className={`radio-widget ${playing ? 'is-playing' : ''}`} aria-labelledby="radio-widget-heading" data-testid="generative-radio">
+    <div className="radio-session-toolbar">
+      <span className="radio-session-kind">Radio générative</span>
+      <button className="radio-settings-trigger" type="button" onClick={() => openSettings('sound')}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14M7 3v4M13 8v4M8 13v4" /></svg>Réglages</button>
+    </div>
+    <div className="radio-listening-title">
+      <h1 id="radio-widget-heading">{currentTrack?.title ?? 'À ton rythme.'}</h1>
+      <p>{generating ? 'Ton premier morceau prend forme.' : currentTrack ? (playing ? 'La suite se compose pendant que tu écoutes.' : 'Reprends là où tu en étais.') : 'Quelques mots. Une radio qui ne s’arrête pas.'}</p>
+    </div>
+    <form className="radio-listening-form" noValidate onSubmit={(event) => { event.preventDefault(); startListening() }} data-testid="radio-form">
+        <div className="radio-keyword-field">
+          <div className="radio-keyword-field-head">
+            <label htmlFor="radio-keywords">Ta direction sonore</label>
+            <div className="radio-keyword-head-actions">
+              <button
+                type="button"
+                className="radio-catalog-btn"
+                onClick={() => setTagModalOpen(true)}
+              >
+                Explorer les sons
+              </button>
+              {keywords !== defaultKeywords ? (
+                <button
+                  type="button"
+                  className="radio-keyword-reset-btn"
+                  onClick={() => setKeywords(defaultKeywords)}
+                >
+                  Réinitialiser
+                </button>
+              ) : null}
+            </div>
           </div>
-          <span className="radio-model-stamp">MATIÈRE SONORE</span>
-          <label className={`radio-model-upload ${modelImportState === 'uploading' ? 'is-uploading' : ''}`}>
-            <input className="radio-file-input" type="file" accept=".safetensors,application/octet-stream" onChange={(event) => void handleSftFile(event)} aria-label="Charger un modèle Stable Audio 3" disabled={modelImportState === 'uploading'} />
-            <span>{modelImportState === 'uploading' ? 'IMPORT EN COURS…' : '＋ IMPORTER UN MODÈLE'}</span>
-          </label>
+          <small>Des styles, des instruments, une ambiance. Sépare tes idées par des virgules.</small>
+          <textarea className="radio-keyword-textarea resize-none" ref={keywordsRef} id="radio-keywords" rows={2} value={keywords} onChange={(event) => { setKeywords(event.currentTarget.value); if (error) setError(null) }} placeholder="ambient pads, broken beat…" aria-describedby={error ? 'radio-error' : undefined} aria-invalid={Boolean(error)} />
+        </div>
+      <div className="radio-dial" aria-busy={generating}>
+        <svg viewBox="0 0 200 200" className="radio-dial-ring" aria-hidden="true">
+          <circle cx="100" cy="100" r="94" className="radio-dial-track" />
+          <circle cx="100" cy="100" r="94" className="radio-dial-progress" pathLength="100" strokeDasharray={`${generating ? generationProgress : progress} 100`} />
+        </svg>
+        <button type="button" className="radio-main-play" disabled={generating || modelImportState === 'uploading'} onClick={() => currentTrack ? void togglePlayback() : startListening()} aria-label={generating ? `Composition en cours : ${generationProgress}%` : currentTrack ? (playing ? 'Mettre la radio en pause' : 'Lancer la radio') : setupNeeded ? 'Configurer la radio' : 'Démarrer la radio'}>
+          {generating ? <span className="radio-generation-percent">{generationProgress}<small>%</small></span> : <svg viewBox="0 0 32 32" aria-hidden="true">{playing ? <path d="M10 8v16M22 8v16" className="radio-pause-symbol" /> : <path d="M11 6L26 16 11 26Z" />}</svg>}
+        </button>
+      </div>
+      <div className="radio-play-caption">{generating ? 'Composition en cours' : currentTrack ? (playing ? 'À l’écoute' : 'En pause') : setupNeeded ? 'Configurer puis écouter' : 'Lancer ma radio'}</div>
+      {currentTrack && <div className="radio-listening-timeline"><span>{formatClock(position)}</span><input type="range" min="0" max={currentTrackDuration} step="0.1" value={Math.min(position, currentTrackDuration)} onChange={handleSeek} aria-label="Position dans le programme" /><span>{formatClock(currentTrackDuration)}</span></div>}
+      <div className="radio-essential-controls">
+          <label className="radio-slider-field" htmlFor="radio-bpm"><span>Tempo <b>{bpm} BPM</b></span><input id="radio-bpm" type="range" min="60" max="220" step="1" value={bpm} style={percentStyle((bpm - 60) / 160 * 100)} onChange={(event) => setBpm(event.currentTarget.valueAsNumber)} /></label>
+          <label className="radio-slider-field" htmlFor="radio-energy"><span>Énergie <b>{energy}%</b></span><input id="radio-energy" type="range" min="0" max="100" step="1" value={energy} style={percentStyle(energy)} onChange={(event) => setEnergy(event.currentTarget.valueAsNumber)} /></label>
+      </div>
+      {currentTrack && <button className="radio-new-direction" type="button" disabled={generating || continuationGenerating} onClick={() => void generateNext(true)}>Repartir de cette direction ↗</button>}
+      {error && <p className="radio-error" id="radio-error" role="alert">{error}</p>}
+      <p className="radio-status" role="status" aria-live="polite">{error ? '' : generating || currentTrack ? status : runtimeReady === false ? 'Moteur hors ligne. Tu peux déjà préparer ta radio.' : runtimeReady === null ? 'Recherche du moteur local…' : needsModel ? 'Choisis ton modèle pour la première écoute.' : 'Tout est prêt. À toi de lancer.'}</p>
+    </form>
+        <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="auto" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); void dspRef.current?.resume() }} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError('Le WAV généré ne peut pas être décodé par le navigateur.'); setStatus('Lecture impossible · le moteur prépare un WAV compatible navigateur.') }} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={() => { if (audioRef.current?.duration && Number.isFinite(audioRef.current.duration)) setPosition(Math.min(audioRef.current.currentTime, audioRef.current.duration)) }} onEnded={handleAudioEnded} />
+    <div className="radio-listening-footer"><span>Ton son reste sur ta machine.</span><button type="button" className="radio-engine-trigger" onClick={() => openSettings('model')}><i className={runtimeReady && !needsModel ? 'is-ready' : ''} aria-hidden="true" />{runtimeReady === false ? 'Moteur hors ligne' : needsModel ? 'Choisir un modèle' : modelVariant.toUpperCase() + ' · Modèle prêt'} ↗</button></div>
+
+    <RadioDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Réglages">
+      <div className="radio-settings-nav" role="group" aria-label="Catégorie des réglages">
+        <button type="button" aria-pressed={settingsSection === 'sound'} onClick={() => setSettingsSection('sound')}>Le son</button>
+        <button type="button" aria-pressed={settingsSection === 'model'} onClick={() => setSettingsSection('model')}>Le moteur</button>
+      </div>
+      <div className="radio-settings-content" hidden={settingsSection !== 'model'}>
+        <div className="radio-setup-copy"><h3>{runtimeReady === false ? 'Connecte ton moteur local.' : 'Choisis ton modèle.'}</h3><p>{runtimeReady === false ? 'Démarre le service Stable Audio 3 sur ta machine, puis réessaie la connexion.' : 'Un modèle installé suffit. Ce choix sera conservé pour ta prochaine visite.'}</p>
+          {onReconnect && <button type="button" className="radio-reconnect" disabled={reconnecting} onClick={() => void reconnect()}>{reconnecting ? 'Connexion…' : 'Vérifier la connexion'}</button>}
+          <p className="radio-connection-feedback" aria-live="polite">{runtimeReady === false ? 'Connexion indisponible' : runtimeReady === null ? 'Vérification en cours…' : 'Moteur connecté'}</p>
         </div>
         <div className={`radio-sft-details ${selectedAdapter || quantizedModelSelected ? 'is-ready' : ''}`} aria-live="polite">
           <strong>{quantizedModelSelected ? selectedModelVariant?.label : selectedAdapter?.filename ?? sftFile?.name ?? 'Aucun modèle chargé'}</strong>
@@ -1290,55 +1329,77 @@ export const GenerativeRadio = ({
         <a className="radio-model-help" href="https://huggingface.co/stabilityai/stable-audio-3-medium" target="_blank" rel="noreferrer">Looking for a model? <span>Stable Audio 3 Medium on Hugging Face ↗</span></a>
         {(selectedAdapter || sftFile) && <button className="radio-model-reset" type="button" onClick={resetModel}>Retirer le modèle sélectionné</button>}
 
-        <div className="radio-track-copy">
-          <span className="radio-eyebrow">NOW PLAYING</span>
-          <h2 id="radio-widget-heading">{currentTrack?.title ?? 'En attente du premier programme'}</h2>
-          <p><span>{currentTrack ? `${currentTrack.key} · ${currentTrack.bpm} BPM` : 'Aucun audio chargé'}</span><b>{evolutionLabels.find((item) => item.id === displayedEvolution)?.label}</b></p>
-        </div>
-
-        <div className="radio-transport">
-          <button className="radio-play" type="button" onClick={() => void togglePlayback()} aria-pressed={playing} aria-label={playing ? 'Mettre la radio en pause' : 'Lancer la radio'} disabled={generating && !currentTrack}>{playing ? 'Ⅱ' : '▶'}</button>
-          <div className="radio-timeline">
-            <div className="radio-timeline-bar"><i style={{ width: `${progress}%` }} aria-hidden="true" /><input type="range" min="0" max={currentTrackDuration} step="0.1" value={Math.min(position, currentTrackDuration)} onChange={handleSeek} aria-label="Position dans le programme" disabled={!currentTrack} /></div>
-            <div className="radio-timeline-meta"><span>{formatClock(position)}</span><span>{formatClock(currentTrackDuration)}</span></div>
+          <label className={`radio-model-upload ${modelImportState === 'uploading' ? 'is-uploading' : ''}`}>
+            <input className="radio-file-input" type="file" accept=".safetensors,application/octet-stream" onChange={(event) => void handleSftFile(event)} aria-label="Charger un modèle Stable Audio 3" disabled={modelImportState === 'uploading'} />
+            <span>{modelImportState === 'uploading' ? 'IMPORT EN COURS…' : '＋ IMPORTER UN MODÈLE'}</span>
+          </label>
+        <p className="radio-upload-help">Fichier .safetensors · 2 Go maximum</p>
+        <details className="radio-model-options-panel" data-testid="radio-model-options-panel">
+          <summary className="radio-model-options-summary">
+            <span><strong>Réglages de génération</strong><small>Steps, CFG, APG, seed & prompt négatif</small></span>
+            <span className="radio-model-options-badge">AVANCÉ</span>
+          </summary>
+          <div className="radio-dsp-control-grid" style={{ paddingTop: '8px' }}>
+            <label className="radio-slider-field" htmlFor="radio-steps"><span>Steps d’échantillonnage <b>{steps} steps</b></span><input id="radio-steps" type="range" min="1" max="24" step="1" value={steps} style={percentStyle((steps - 1) / 23 * 100)} onChange={(event) => setSteps(event.currentTarget.valueAsNumber)} /></label>
+            <label className="radio-slider-field" htmlFor="radio-cfg"><span>Guidance CFG <b>{cfg.toFixed(1)}</b></span><input id="radio-cfg" type="range" min="0" max="5" step="0.1" value={cfg} style={percentStyle(cfg / 5 * 100)} onChange={(event) => setCfg(event.currentTarget.valueAsNumber)} /></label>
+            <label className="radio-slider-field" htmlFor="radio-apg"><span>Guidance APG <b>{apg.toFixed(2)}</b></span><input id="radio-apg" type="range" min="0" max="1" step="0.05" value={apg} style={percentStyle(apg * 100)} onChange={(event) => setApg(event.currentTarget.valueAsNumber)} /></label>
+            <label className="radio-slider-field" htmlFor="radio-seed"><span>Seed fixe <b>{seedInput.trim() ? seedInput : 'Aléatoire'}</b></span><input id="radio-seed" type="number" min="0" max="2147483647" placeholder="Aléatoire (ex: 42)" value={seedInput} onChange={(event) => setSeedInput(event.currentTarget.value)} className="radio-number-input" /></label>
           </div>
-        </div>
-        <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="auto" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); void dspRef.current?.resume() }} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError('Le WAV généré ne peut pas être décodé par le navigateur.'); setStatus('Lecture impossible · le moteur prépare un WAV compatible navigateur.') }} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={() => { if (audioRef.current?.duration && Number.isFinite(audioRef.current.duration)) setPosition(Math.min(audioRef.current.currentTime, audioRef.current.duration)) }} onEnded={handleAudioEnded} />
-
-        <div className="radio-buffer" aria-label="État du programme">
-          <div className="radio-buffer-heading"><span>PROGRAMME AUDIO</span><b>{generating || continuationGenerating ? `${generationProgress}%` : bufferAdvance}</b></div>
-          <div className="radio-buffer-track" aria-hidden="true"><i className={currentTrack ? 'is-playing' : 'is-empty'} /><i className={generating || continuationGenerating ? 'is-building' : currentTrack ? 'is-ready' : 'is-empty'} /><i className={continuationTrack ? 'is-ready' : 'is-empty'} /><i className="is-empty" /></div>
-          <div className="radio-buffer-meta"><span>{currentTrack ? 'PROGRAMME' : 'VIDE'}</span><span>{generating ? 'COMPOSITION' : continuationBufferState}</span><span>UN SEUL FLUX</span><span>{currentTrack ? 'SANS COUPURE' : 'PRÊT'}</span></div>
-        </div>
-      </div>
-
-      <form className="radio-recipe" noValidate onSubmit={(event) => void handleStart(event)} data-testid="radio-form">
-            <div className="radio-recipe-heading"><div><span className="radio-eyebrow">DIRECTIVE SONORE</span><h3>Façonne ta radio</h3></div><span className="radio-recipe-count">{tagCountLabel}</span></div>
-        <div className="radio-keyword-field">
-          <div className="radio-keyword-field-head">
-            <label htmlFor="radio-keywords">Mots-clés</label>
-            <div className="radio-keyword-head-actions">
-              <button
-                type="button"
-                className="radio-catalog-btn"
-                onClick={() => setTagModalOpen(true)}
-              >
-                ＋ Catalogue des tags
-              </button>
-              {keywords !== defaultKeywords ? (
+          <div className="radio-keyword-field radio-negative-prompt-field">
+            <div className="radio-keyword-field-head">
+              <label htmlFor="radio-negative-prompt">Prompt négatif (termes exclus)</label>
+              {negativePrompt !== defaultNegativePrompt ? (
                 <button
                   type="button"
                   className="radio-keyword-reset-btn"
-                  onClick={() => setKeywords(defaultKeywords)}
+                  onClick={() => setNegativePrompt(defaultNegativePrompt)}
                 >
                   Rétablir défaut
                 </button>
               ) : null}
             </div>
+            <small>Termes et artefacts exclus · virgules ou retours à la ligne</small>
+            <textarea
+              id="radio-negative-prompt"
+              rows={2}
+              value={negativePrompt}
+              onChange={(event) => setNegativePrompt(event.currentTarget.value)}
+              className="radio-keyword-textarea resize-none"
+              placeholder="lead vocals, speech, broadband static…"
+            />
           </div>
-          <small>Pool sans limite · virgules ou retours à la ligne · tirage différent à chaque génération</small>
-          <textarea className="radio-keyword-textarea resize-none" ref={keywordsRef} id="radio-keywords" rows={3} value={keywords} onChange={(event) => { setKeywords(event.currentTarget.value); if (error) setError(null) }} placeholder="ambient pads, broken beat…" aria-describedby={error ? 'radio-error' : undefined} aria-invalid={Boolean(error)} />
+          <div className="radio-keyword-chips is-negative" aria-label="Tags exclus de la génération">
+            {negativePromptTokens.map((token) => (
+              <span key={token} className="radio-keyword-chip">
+                <span>{token}</span>
+                <button
+                  type="button"
+                  className="radio-chip-remove"
+                  onClick={() => handleRemoveNegativeKeyword(token)}
+                  aria-label={`Retirer le tag exclu ${token}`}
+                  title={`Retirer ${token}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        </details>
+
+      </div>
+      <div className="radio-settings-content" hidden={settingsSection !== 'sound'}>
+        <p className="radio-settings-intro">Le tempo et l’énergie sont à portée de main sur le lecteur. Ici, tu peux aller plus loin.</p>
+        <div className="radio-control-grid">
+
+          <label className="radio-slider-field" htmlFor="radio-drift"><span>Dérive · microtiming <b>±{Math.round(drift / 4)} BPM</b></span><input id="radio-drift" type="range" min="0" max="100" step="1" value={drift} style={percentStyle(drift)} onChange={(event) => setDrift(event.currentTarget.valueAsNumber)} /></label>
+
+          <label className="radio-slider-field" htmlFor="radio-texture"><span>Matière <b>{texture}%</b></span><input id="radio-texture" type="range" min="0" max="100" step="1" value={texture} style={percentStyle(texture)} onChange={(event) => setTexture(event.currentTarget.valueAsNumber)} /></label>
+          <label className="radio-slider-field" htmlFor="radio-duration"><span>Programme <b>{formatClock(durationSeconds)}</b></span><input id="radio-duration" type="range" min={minimumRadioProgramSeconds} max={maximumRadioProgramSeconds} step="1" value={durationSeconds} style={percentStyle((durationSeconds - minimumRadioProgramSeconds) / (maximumRadioProgramSeconds - minimumRadioProgramSeconds) * 100)} onChange={(event) => setDurationSeconds(event.currentTarget.valueAsNumber)} /></label>
+          <label className="radio-slider-field" htmlFor="radio-sft-strength"><span>Influence du modèle <b>{quantizedModelSelected ? '25% FIXE' : `${loraStrength}%`}</b></span><input id="radio-sft-strength" type="range" min="0" max="100" step="1" value={quantizedModelSelected ? 25 : loraStrength} style={percentStyle(quantizedModelSelected ? 25 : loraStrength)} onChange={(event) => setLoraStrength(event.currentTarget.valueAsNumber)} disabled={quantizedModelSelected} /></label>
         </div>
+        <fieldset className="radio-evolution-field"><legend>Courbe d’évolution</legend><div className="radio-evolution-options">{evolutionLabels.map((item) => <button key={item.id} className={evolution === item.id ? 'is-selected' : ''} type="button" aria-pressed={evolution === item.id} onClick={() => setEvolution(item.id)}><strong>{item.label}</strong><small>{item.hint}</small></button>)}</div></fieldset>
+
+        <details className="radio-structure-details"><summary>Composition <small>{fixedTags.length} sons fixes · {phases.length} phases</small></summary>
         <div className="radio-keyword-chips" aria-label="Tags utilisés par la génération">
           {displayedTags.map((token) => {
             const category = getTagCategory(token)
@@ -1366,8 +1427,7 @@ export const GenerativeRadio = ({
             )
           })}
         </div>
-
-        {/* Zone de tags fixes */}
+        <div className="radio-pin-picker" aria-label="Épingler des sons à chaque morceau">{keywordTokens.map((tag) => <button type="button" key={tag} aria-pressed={fixedTags.some((fixed) => fixed.toLowerCase() === tag.toLowerCase())} onClick={() => handleToggleFixedTag(tag)}>{fixedTags.some((fixed) => fixed.toLowerCase() === tag.toLowerCase()) ? '✓ ' : '+ '}{tag}</button>)}</div>
         <div className="radio-fixed-tags-panel" data-testid="radio-fixed-tags-panel">
           <div className="radio-fixed-tags-header">
             <div className="radio-fixed-tags-heading">
@@ -1504,6 +1564,8 @@ export const GenerativeRadio = ({
                       <strong className="radio-phase-step-name">{phaseLabel}</strong>
                       <small className="radio-phase-step-energy">{phaseMeta ? `⚡ ${phaseMeta.defaultEnergy}%` : ''}</small>
                     </div>
+                    <button type="button" className="radio-phase-move" disabled={index === 0} aria-label={`Avancer la phase ${phaseLabel} en position ${index + 1}`} onClick={() => setPhases((previous) => { const next = [...previous]; [next[index - 1], next[index]] = [next[index]!, next[index - 1]!]; return next })}>←</button>
+                    <button type="button" className="radio-phase-move" disabled={index === phases.length - 1} aria-label={`Reculer la phase ${phaseLabel} en position ${index + 1}`} onClick={() => setPhases((previous) => { const next = [...previous]; [next[index], next[index + 1]] = [next[index + 1]!, next[index]!]; return next })}>→</button>
                     <button
                       type="button"
                       className="radio-phase-remove-btn"
@@ -1546,15 +1608,7 @@ export const GenerativeRadio = ({
           </div>
         </div>
 
-        <div className="radio-procedural-panel" data-testid="radio-procedural-panel">
-          <div className="radio-procedural-toggle">
-            <i aria-hidden="true" />
-            <span><strong>Évolution procédurale</strong><small>Seuls les tags saisis sont utilisés comme matière; le BPM cible reste verrouillé, énergie et couches dérivent lentement</small></span>
-            <b>ON</b>
-          </div>
-          <p>{activeRecipe ? `Flux actif · ${activeRecipe.tags.length} tags tirés au hasard depuis un pool de ${activeRecipe.keywordPool.length} tags utilisateur · ${activeRecipe.bpm} BPM cible verrouillé · énergie ${activeRecipe.energy}% · matière ${activeRecipe.texture}%` : `Tags utilisateur uniquement · nombre de tags variable à chaque génération · BPM cible verrouillé · énergie et matière évoluent sur 6 min`}</p>
-        </div>
-
+        </details>
         <details className="radio-dsp-panel" data-testid="radio-dsp-panel"><summary className="radio-advanced-summary">Traitement audio <span>Égalisation, filtre & limiteur</span></summary>
           <label className="radio-dsp-switch" htmlFor="radio-dsp-enabled">
             <input id="radio-dsp-enabled" type="checkbox" checked={dspEnabled} onChange={(event) => setDspEnabled(event.currentTarget.checked)} />
@@ -1580,118 +1634,35 @@ export const GenerativeRadio = ({
           </div>
         </details>
 
-        <div className="radio-control-grid">
-          <label className="radio-slider-field" htmlFor="radio-bpm"><span>Tempo de base · cible verrouillée <b>{bpm} BPM</b></span><input id="radio-bpm" type="range" min="60" max="220" step="1" value={bpm} style={percentStyle((bpm - 60) / 160 * 100)} onChange={(event) => setBpm(event.currentTarget.valueAsNumber)} /></label>
-          <label className="radio-slider-field" htmlFor="radio-drift"><span>Dérive · microtiming <b>±{Math.round(drift / 4)} BPM</b></span><input id="radio-drift" type="range" min="0" max="100" step="1" value={drift} style={percentStyle(drift)} onChange={(event) => setDrift(event.currentTarget.valueAsNumber)} /></label>
-          <label className="radio-slider-field" htmlFor="radio-energy"><span>Énergie <b>{energy}%</b></span><input id="radio-energy" type="range" min="0" max="100" step="1" value={energy} style={percentStyle(energy)} onChange={(event) => setEnergy(event.currentTarget.valueAsNumber)} /></label>
-          <label className="radio-slider-field" htmlFor="radio-texture"><span>Matière <b>{texture}%</b></span><input id="radio-texture" type="range" min="0" max="100" step="1" value={texture} style={percentStyle(texture)} onChange={(event) => setTexture(event.currentTarget.valueAsNumber)} /></label>
-          <label className="radio-slider-field" htmlFor="radio-duration"><span>Programme <b>{formatClock(durationSeconds)}</b></span><input id="radio-duration" type="range" min={minimumRadioProgramSeconds} max={maximumRadioProgramSeconds} step="1" value={durationSeconds} style={percentStyle((durationSeconds - minimumRadioProgramSeconds) / (maximumRadioProgramSeconds - minimumRadioProgramSeconds) * 100)} onChange={(event) => setDurationSeconds(event.currentTarget.valueAsNumber)} /></label>
-          <label className="radio-slider-field" htmlFor="radio-sft-strength"><span>Influence du modèle <b>{quantizedModelSelected ? '25% FIXE' : `${loraStrength}%`}</b></span><input id="radio-sft-strength" type="range" min="0" max="100" step="1" value={quantizedModelSelected ? 25 : loraStrength} style={percentStyle(quantizedModelSelected ? 25 : loraStrength)} onChange={(event) => setLoraStrength(event.currentTarget.valueAsNumber)} disabled={quantizedModelSelected} /></label>
+        <details className="radio-session-details"><summary>Détails de la session</summary>
+        <div className="radio-procedural-panel" data-testid="radio-procedural-panel">
+          <div className="radio-procedural-toggle">
+            <i aria-hidden="true" />
+            <span><strong>Évolution procédurale</strong><small>Seuls les tags saisis sont utilisés comme matière; le BPM cible reste verrouillé, énergie et couches dérivent lentement</small></span>
+            <b>ON</b>
+          </div>
+          <p>{activeRecipe ? `Flux actif · ${activeRecipe.tags.length} tags tirés au hasard depuis un pool de ${activeRecipe.keywordPool.length} tags utilisateur · ${activeRecipe.bpm} BPM cible verrouillé · énergie ${activeRecipe.energy}% · matière ${activeRecipe.texture}%` : `Tags utilisateur uniquement · nombre de tags variable à chaque génération · BPM cible verrouillé · énergie et matière évoluent sur 6 min`}</p>
         </div>
-
-        <fieldset className="radio-evolution-field"><legend>Courbe d’évolution</legend><div className="radio-evolution-options">{evolutionLabels.map((item) => <button key={item.id} className={evolution === item.id ? 'is-selected' : ''} type="button" aria-pressed={evolution === item.id} onClick={() => setEvolution(item.id)}><strong>{item.label}</strong><small>{item.hint}</small></button>)}</div></fieldset>
-
-        <details className="radio-model-options-panel" data-testid="radio-model-options-panel">
-          <summary className="radio-model-options-summary">
-            <span><strong>Réglages de génération</strong><small>Steps, CFG, APG, seed & prompt négatif</small></span>
-            <span className="radio-model-options-badge">AVANCÉ</span>
-          </summary>
-          <div className="radio-dsp-control-grid" style={{ paddingTop: '8px' }}>
-            <label className="radio-slider-field" htmlFor="radio-steps"><span>Steps d’échantillonnage <b>{steps} steps</b></span><input id="radio-steps" type="range" min="1" max="24" step="1" value={steps} style={percentStyle((steps - 1) / 23 * 100)} onChange={(event) => setSteps(event.currentTarget.valueAsNumber)} /></label>
-            <label className="radio-slider-field" htmlFor="radio-cfg"><span>Guidance CFG <b>{cfg.toFixed(1)}</b></span><input id="radio-cfg" type="range" min="0" max="5" step="0.1" value={cfg} style={percentStyle(cfg / 5 * 100)} onChange={(event) => setCfg(event.currentTarget.valueAsNumber)} /></label>
-            <label className="radio-slider-field" htmlFor="radio-apg"><span>Guidance APG <b>{apg.toFixed(2)}</b></span><input id="radio-apg" type="range" min="0" max="1" step="0.05" value={apg} style={percentStyle(apg * 100)} onChange={(event) => setApg(event.currentTarget.valueAsNumber)} /></label>
-            <label className="radio-slider-field" htmlFor="radio-seed"><span>Seed fixe <b>{seedInput.trim() ? seedInput : 'Aléatoire'}</b></span><input id="radio-seed" type="number" min="0" max="2147483647" placeholder="Aléatoire (ex: 42)" value={seedInput} onChange={(event) => setSeedInput(event.currentTarget.value)} className="radio-number-input" /></label>
-          </div>
-          <div className="radio-keyword-field radio-negative-prompt-field">
-            <div className="radio-keyword-field-head">
-              <label htmlFor="radio-negative-prompt">Prompt négatif (termes exclus)</label>
-              {negativePrompt !== defaultNegativePrompt ? (
-                <button
-                  type="button"
-                  className="radio-keyword-reset-btn"
-                  onClick={() => setNegativePrompt(defaultNegativePrompt)}
-                >
-                  Rétablir défaut
-                </button>
-              ) : null}
-            </div>
-            <small>Termes et artefacts exclus · virgules ou retours à la ligne</small>
-            <textarea
-              id="radio-negative-prompt"
-              rows={2}
-              value={negativePrompt}
-              onChange={(event) => setNegativePrompt(event.currentTarget.value)}
-              className="radio-keyword-textarea resize-none"
-              placeholder="lead vocals, speech, broadband static…"
-            />
-          </div>
-          <div className="radio-keyword-chips is-negative" aria-label="Tags exclus de la génération">
-            {negativePromptTokens.map((token) => (
-              <span key={token} className="radio-keyword-chip">
-                <span>{token}</span>
-                <button
-                  type="button"
-                  className="radio-chip-remove"
-                  onClick={() => handleRemoveNegativeKeyword(token)}
-                  aria-label={`Retirer le tag exclu ${token}`}
-                  title={`Retirer ${token}`}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        </details>
-
-        <div className="radio-recipe-footer">
-          <span className="radio-procedural-footer-toggle radio-static-mode"><i aria-hidden="true" /> <span>Auto-évolution</span><b>ON</b></span>
-          <span className="radio-program-mode"><i aria-hidden="true" /> <span>Programme unique</span><b>ÉVOLUTIF</b></span>
-          <button className="radio-generate-button" type="button" disabled={generating || continuationGenerating || modelImportState === 'uploading' || !selectedModelVariant?.available} onClick={() => void generateNext()}>{generating ? 'COMPOSITION EN COURS…' : continuationGenerating ? 'MORCEAU INDÉPENDANT EN CALCUL…' : currentTrack ? '✦ RÉGÉNÉRER LE PROGRAMME' : '✦ GÉNÉRER LE PROGRAMME'}</button>
-        </div>
-        {error && <p className="radio-error" id="radio-error" role="alert">{error}</p>}
-        <p className="radio-status" role="status" aria-live="polite"><i aria-hidden="true" />{status}</p>
-      </form>
-    </div>
-
-    <div className="radio-queue" aria-label="Programme de la radio">
+        <div className="radio-buffer" aria-label="État du programme">
+          <div className="radio-buffer-heading"><span>PROGRAMME AUDIO</span><b>{generating || continuationGenerating ? `${generationProgress}%` : bufferAdvance}</b></div>
+          <div className="radio-buffer-track" aria-hidden="true"><i className={currentTrack ? 'is-playing' : 'is-empty'} /><i className={generating || continuationGenerating ? 'is-building' : currentTrack ? 'is-ready' : 'is-empty'} /><i className={continuationTrack ? 'is-ready' : 'is-empty'} /><i className="is-empty" /></div>
+          <div className="radio-buffer-meta"><span>{currentTrack ? 'PROGRAMME' : 'VIDE'}</span><span>{generating ? 'COMPOSITION' : continuationBufferState}</span><span>UN SEUL FLUX</span><span>{currentTrack ? 'SANS COUPURE' : 'PRÊT'}</span></div>
+        </div>    <div className="radio-queue" aria-label="Programme de la radio">
       {activeQueueTrack ? <>
         <RadioTrackCard track={activeQueueTrack} slot="current" statusLabel={currentTrack ? (playing ? 'PLAYING / ACTIF' : 'PAUSED / PAUSE') : 'BUILDING / CALCUL'} building={!currentTrack} />
         {nextQueueTrack ? <RadioTrackCard track={nextQueueTrack} slot="next" statusLabel={continuationTrack ? 'READY / PRÊT' : continuationGenerating ? `BUILDING / ${generationProgress}%` : 'WAITING / ATTENTE'} building={continuationGenerating} /> : <div className="radio-queue-row is-next is-empty" data-testid="next-radio-track" aria-label="Prochain morceau"><div className="radio-queue-track-heading"><span>02 · UP NEXT</span><b>WAITING / ATTENTE</b></div><strong className="radio-queue-title">Prochain morceau en attente</strong><small>Les paramètres complets apparaîtront dès le lancement de sa préparation.</small></div>}
       </> : <div className="radio-queue-empty">Aucun flux dans le lecteur · importe ton modèle puis lance la composition.</div>}
     </div>
 
-    {tagModalOpen && (
-      <div
-        className="radio-modal-backdrop"
-        onClick={() => setTagModalOpen(false)}
-        role="presentation"
-        data-testid="radio-tag-modal-backdrop"
-      >
-        <div
-          className="radio-modal-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="radio-modal-title"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="radio-modal-header">
-            <div>
-              <span className="radio-eyebrow">STABLE AUDIO 3 · PROMPT LIBRE</span>
-              <h3 id="radio-modal-title">Vocabulaire de tags & structure</h3>
-              <p>{STABLE_AUDIO_TAG_CATALOG_NOTE} Clique sur un tag pour l’ajouter/retirer de tes mots-clés ou phases.</p>
-            </div>
-            <button
-              type="button"
-              className="radio-modal-close"
-              onClick={() => setTagModalOpen(false)}
-              aria-label="Fermer le catalogue"
-            >
-              ×
-            </button>
-          </div>
-
+        </details>
+      </div>
+      <div className="radio-settings-footer"><span>Réglages appliqués automatiquement.</span><button type="button" onClick={() => setSettingsOpen(false)}>Retour à la radio</button></div>
+    </RadioDialog>
+    <RadioDialog open={tagModalOpen} onClose={() => setTagModalOpen(false)} title="Explorer les sons" wide>
+<p className="radio-catalog-description">{STABLE_AUDIO_TAG_CATALOG_NOTE}</p>
           <div className="radio-modal-controls">
             <input
+              aria-label="Rechercher un son"
               type="search"
               className="radio-modal-search"
               placeholder="Filtrer les tags (ex: techno, kick, drone, acid, reverb…)"
@@ -1699,11 +1670,12 @@ export const GenerativeRadio = ({
               onChange={(e) => setModalSearch(e.currentTarget.value)}
               autoFocus
             />
-            <div className="radio-modal-tabs" role="tablist">
+            {modalSearch && <button type="button" className="radio-clear-search" onClick={() => { setModalSearch(''); document.querySelector<HTMLInputElement>('.radio-modal-search')?.focus() }}>Effacer la recherche</button>}
+            <div className="radio-modal-tabs" role="group" aria-label="Catégories de sons">
               <button
                 type="button"
-                role="tab"
-                aria-selected={modalCategory === 'all'}
+                
+                aria-pressed={modalCategory === 'all'}
                 className={`radio-modal-tab ${modalCategory === 'all' ? 'is-active' : ''}`}
                 onClick={() => setModalCategory('all')}
               >
@@ -1717,8 +1689,8 @@ export const GenerativeRadio = ({
                   <button
                     key={cat}
                     type="button"
-                    role="tab"
-                    aria-selected={modalCategory === cat}
+                    
+                    aria-pressed={modalCategory === cat}
                     className={`radio-modal-tab ${modalCategory === cat ? 'is-active' : ''}`}
                     onClick={() => setModalCategory(cat)}
                   >
@@ -1837,7 +1809,7 @@ export const GenerativeRadio = ({
               </div>
             )}
 
-            {filteredTags.length === 0 && (modalCategory !== 'phases' && filteredPhases.length === 0) && (
+            {((modalCategory === 'phases' && filteredPhases.length === 0) || (modalCategory === 'all' && filteredTags.length === 0 && filteredPhases.length === 0) || (modalCategory !== 'all' && modalCategory !== 'phases' && filteredTags.length === 0)) && (
               <div className="radio-modal-empty">
                 Aucun tag trouvé pour « {modalSearch} ».
               </div>
@@ -1860,8 +1832,6 @@ export const GenerativeRadio = ({
               Valider & fermer
             </button>
           </div>
-        </div>
-      </div>
-    )}
+    </RadioDialog>
   </section>
 }

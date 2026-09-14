@@ -138,24 +138,20 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
     }
   }
 
-  const engineCopy = stableAudioRuntimeReady === false
-    ? 'Moteur hors ligne · démarre ton API locale pour générer.'
-    : stableAudioRuntimeReady === null ? 'Connexion au moteur local…' : 'Moteur connecté · tes modèles restent enregistrés sur ta machine, même après rechargement.'
+  const reconnect = async (): Promise<void> => {
+    setStableAudioRuntimeReady(null)
+    try { await loadCatalog() } catch { setStableAudioRuntimeReady(false) }
+  }
 
   return <div className="radio-page" data-testid="generative-radio-page">
     <header className="radio-page-header">
-      <button className="radio-page-back" type="button" onClick={handleBack} aria-label="Retourner au player">← Retour</button>
-      <div className="radio-page-brand"><strong><i aria-hidden="true">∿</i> radio.studio</strong><span>Un espace pour le son</span></div>
-      <span className={`radio-page-mark ${stableAudioRuntimeReady ? 'is-connected' : ''}`}><i aria-hidden="true" />{stableAudioRuntimeReady ? 'Moteur connecté' : stableAudioRuntimeReady === null ? 'Connexion…' : 'Moteur hors ligne'}</span>
+      <a className="radio-page-brand" href="/" aria-label="radio.studio, accueil"><span aria-hidden="true">∿</span>radio.studio</a>
+      {onBack && <button type="button" className="radio-page-back" onClick={handleBack} aria-label="Retourner au player">← Retour au player</button>}
     </header>
-
     <main className="radio-page-main">
-      <div className="radio-page-intro">
-        <div><span>TON STUDIO DE RADIO GÉNÉRATIVE</span><h1>Une radio qui évolue avec toi.</h1></div>
-        <p>Choisis une matière sonore. Dessine son évolution.<br />Laisse la musique prendre le relais.</p>
-      </div>
-      <div className="radio-engine-notice" role="status"><span>{engineCopy}</span><span>Stable Audio 3 · Audio local</span></div>
       <GenerativeRadio
+        runtimeReady={stableAudioRuntimeReady}
+        onReconnect={reconnect}
         availableModels={models}
         availableModelVariants={modelVariants}
         onClearModel={handleClearModel}
@@ -166,7 +162,5 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
         selectedModel={selectedModel}
       />
     </main>
-
-    <footer className="radio-page-footer"><span>radio.studio — Un son qui suit tes idées.</span><span>Génération locale · Open source</span></footer>
   </div>
 }

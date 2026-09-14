@@ -2,6 +2,19 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GenerativeRadio, RADIO_KEYWORDS_STORAGE_KEY, RADIO_FIXED_TAGS_STORAGE_KEY } from './GenerativeRadio'
 
+const openSettings = (section: 'sound' | 'model' = 'sound', disclosure?: string) => {
+  fireEvent.click(screen.getByRole('button', { name: 'Réglages' }))
+  if (section === 'model') fireEvent.click(screen.getByRole('button', { name: 'Le moteur' }))
+  if (disclosure) fireEvent.click(screen.getByText(disclosure, { selector: 'summary, summary strong' }))
+}
+const closeSettings = () => {
+  if (screen.queryByRole('dialog', { name: 'Réglages' })) fireEvent.click(screen.getByRole('button', { name: 'Retour à la radio' }))
+}
+const startRadio = () => {
+  closeSettings()
+  fireEvent.click(screen.getByRole('button', { name: 'Démarrer la radio' }))
+}
+
 describe('GenerativeRadio', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -9,13 +22,16 @@ describe('GenerativeRadio', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
   })
 
-  it('renders the compact radio recipe and live buffer', () => {
+  it('shows only the direction, playback action, tempo and energy on first visit', () => {
     render(<GenerativeRadio />)
 
     expect(screen.getByTestId('generative-radio')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Façonne ta radio' })).toBeInTheDocument()
-    expect(screen.getByText('00:00 PRÊT')).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: /Mots-clés/ })).toHaveValue('minimal, minimal techno')
+    expect(screen.getByRole('heading', { name: 'À ton rythme.' })).toBeInTheDocument()
+    expect(screen.getAllByRole('slider')).toHaveLength(2)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Ta direction sonore/ })).toHaveValue('minimal, minimal techno')
+    openSettings()
     expect(screen.getByRole('slider', { name: /Influence du modèle/ })).toHaveValue('100')
   })
 
@@ -32,6 +48,7 @@ describe('GenerativeRadio', () => {
     render(<GenerativeRadio onImportModel={onImportModel} />)
     const file = new File(['weights'], 'my-style.safetensors', { type: 'application/octet-stream' })
 
+    openSettings('model')
     fireEvent.change(screen.getByLabelText('Charger un modèle Stable Audio 3'), { target: { files: [file] } })
 
     await waitFor(() => expect(onImportModel).toHaveBeenCalledWith(file))
@@ -53,9 +70,9 @@ describe('GenerativeRadio', () => {
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    fireEvent.change(screen.getByRole('textbox', { name: /Mots-clés/ }), { target: { value: 'dusty drums, warm tape' } })
-    fireEvent.change(screen.getByLabelText(/Tempo de base/), { target: { value: '132' } })
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    fireEvent.change(screen.getByRole('textbox', { name: /Ta direction sonore/ }), { target: { value: 'dusty drums, warm tape' } })
+    fireEvent.change(screen.getByLabelText(/Tempo/), { target: { value: '132' } })
+    startRadio()
 
     await waitFor(() => expect(onGenerate).toHaveBeenCalledWith(expect.objectContaining({
       keywords: 'dusty drums, warm tape',
@@ -99,9 +116,9 @@ describe('GenerativeRadio', () => {
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    fireEvent.change(screen.getByRole('textbox', { name: /Mots-clés/ }), { target: { value: userTags.join(', ') } })
-    expect(screen.getByText('10 TAGS')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    fireEvent.change(screen.getByRole('textbox', { name: /Ta direction sonore/ }), { target: { value: userTags.join(', ') } })
+    expect(screen.getByRole('textbox', { name: /Ta direction sonore/ })).toHaveValue(userTags.join(', '))
+    startRadio()
 
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
 
@@ -119,7 +136,7 @@ describe('GenerativeRadio', () => {
     expect(requests[1]!.drift).toBe(requests[0]!.drift)
     expect(requests[1]!.keywords).not.toBe(requests[0]!.keywords)
     const activeTagCount = requests[0]!.keywords.split(',').map((tag: string) => tag.trim()).filter(Boolean).length
-    expect(screen.getByText(`${activeTagCount}/10 TAGS`)).toBeInTheDocument()
+    expect(screen.getByTestId('current-radio-track')).toHaveTextContent(`${activeTagCount}/10 TAGS`)
   })
 
   it('keeps fixed tags as a base and samples optional tags from the user field', async () => {
@@ -150,8 +167,8 @@ describe('GenerativeRadio', () => {
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    fireEvent.change(screen.getByRole('textbox', { name: /Mots-clés/ }), { target: { value: userTags.join(', ') } })
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    fireEvent.change(screen.getByRole('textbox', { name: /Ta direction sonore/ }), { target: { value: userTags.join(', ') } })
+    startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
 
     const userPool = new Set(userTags)
@@ -172,6 +189,7 @@ describe('GenerativeRadio', () => {
   it('exposes the real-time pro monitoring controls without changing the generated recipe', () => {
     render(<GenerativeRadio />)
 
+    openSettings('sound', 'Traitement audio')
     expect(screen.getByTestId('radio-dsp-panel')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /DSP PRO \/ MONITORING/ })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: /LIMITER INTELLIGENT/ })).toBeChecked()
@@ -222,9 +240,10 @@ describe('GenerativeRadio', () => {
     ]
     render(<GenerativeRadio onGenerate={onGenerate} availableModelVariants={modelVariants} />)
 
+    openSettings('model')
     fireEvent.change(screen.getByLabelText(/Variante du modèle/), { target: { value: 'int8' } })
     expect(screen.getByText('INT8 · modèle Berlin fusionné', { selector: 'strong' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    startRadio()
 
     await waitFor(() => expect(onGenerate).toHaveBeenCalled())
     expect(onGenerate.mock.calls[0]![0]).toEqual(expect.objectContaining({
@@ -250,8 +269,8 @@ describe('GenerativeRadio', () => {
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    fireEvent.change(screen.getByRole('textbox', { name: /Mots-clés/ }), { target: { value: 'user tag alpha, user tag beta' } })
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    fireEvent.change(screen.getByRole('textbox', { name: /Ta direction sonore/ }), { target: { value: 'user tag alpha, user tag beta' } })
+    startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
     expect(screen.getAllByText('01 · FLUX ACTIF')).toHaveLength(1)
     const first = onGenerate.mock.calls[0]![0]
@@ -285,7 +304,7 @@ describe('GenerativeRadio', () => {
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent(continuation.modelVariant.toUpperCase())
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('GENERATION ID · ' + 'd'.repeat(16))
 
-    fireEvent.click(screen.getByRole('button', { name: '✦ RÉGÉNÉRER LE PROGRAMME' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Repartir de cette direction ↗' }))
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
 
     const manual = onGenerate.mock.calls[2]![0]
@@ -321,7 +340,7 @@ describe('GenerativeRadio', () => {
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
 
     const audio = document.querySelector('audio.radio-audio') as HTMLAudioElement
@@ -340,7 +359,7 @@ describe('GenerativeRadio', () => {
 
   it('keeps the form-owned error visible and focuses keywords when empty', () => {
     render(<GenerativeRadio />)
-    const keywords = screen.getByRole('textbox', { name: /Mots-clés/ })
+    const keywords = screen.getByRole('textbox', { name: /Ta direction sonore/ })
     fireEvent.change(keywords, { target: { value: '' } })
     fireEvent.submit(screen.getByTestId('radio-form'))
 
@@ -364,10 +383,10 @@ describe('GenerativeRadio', () => {
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
 
-    fireEvent.change(screen.getByLabelText(/Tempo de base/), { target: { value: '138' } })
+    fireEvent.change(screen.getByLabelText(/Tempo/), { target: { value: '138' } })
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
 
     const updated = onGenerate.mock.calls[2]![0]
@@ -396,9 +415,9 @@ describe('GenerativeRadio', () => {
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
-    fireEvent.change(screen.getByLabelText(/Tempo de base/), { target: { value: '140' } })
+    fireEvent.change(screen.getByLabelText(/Tempo/), { target: { value: '140' } })
     resolveStaleNext(staleNext)
 
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
@@ -424,7 +443,7 @@ describe('GenerativeRadio', () => {
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
 
     const next = screen.getByTestId('next-radio-track')
@@ -450,6 +469,7 @@ describe('GenerativeRadio', () => {
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
+    openSettings('model', 'Réglages de génération')
     expect(screen.getByTestId('radio-model-options-panel')).toBeInTheDocument()
     expect(screen.getByRole('slider', { name: /Steps d’échantillonnage/ })).toHaveValue('8')
     expect(screen.getByRole('slider', { name: /Guidance CFG/ })).toHaveValue('1')
@@ -459,7 +479,7 @@ describe('GenerativeRadio', () => {
     fireEvent.change(screen.getByRole('slider', { name: /Guidance CFG/ }), { target: { value: '2.5' } })
     fireEvent.change(screen.getByRole('slider', { name: /Guidance APG/ }), { target: { value: '0.75' } })
 
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalled())
     expect(onGenerate.mock.calls[0]![0]).toEqual(expect.objectContaining({
       steps: 14,
@@ -472,7 +492,7 @@ describe('GenerativeRadio', () => {
     window.localStorage.setItem(RADIO_KEYWORDS_STORAGE_KEY, 'dark synth, berghain pulse')
     const { unmount } = render(<GenerativeRadio />)
 
-    const textarea = screen.getByRole('textbox', { name: /Mots-clés/ })
+    const textarea = screen.getByRole('textbox', { name: /Ta direction sonore/ })
     expect(textarea).toHaveValue('dark synth, berghain pulse')
 
     // Modifying keywords updates localStorage
@@ -480,7 +500,7 @@ describe('GenerativeRadio', () => {
     expect(window.localStorage.getItem(RADIO_KEYWORDS_STORAGE_KEY)).toBe('deep tech, rolling groove')
 
     // Reset button restores default and updates storage
-    const resetBtn = screen.getByRole('button', { name: 'Rétablir défaut' })
+    const resetBtn = screen.getByRole('button', { name: 'Réinitialiser' })
     fireEvent.click(resetBtn)
     expect(textarea).toHaveValue('minimal, minimal techno')
     expect(window.localStorage.getItem(RADIO_KEYWORDS_STORAGE_KEY)).toBe('minimal, minimal techno')
@@ -488,9 +508,10 @@ describe('GenerativeRadio', () => {
     unmount()
   })
 
-  it('renders negative prompt with dark styling and tags underneath', () => {
+  it('edits excluded sounds in advanced settings', () => {
     render(<GenerativeRadio />)
 
+    openSettings('model', 'Réglages de génération')
     const negTextarea = screen.getByRole('textbox', { name: /Prompt négatif/ })
     expect(negTextarea).toHaveClass('radio-keyword-textarea')
 
@@ -508,9 +529,10 @@ describe('GenerativeRadio', () => {
   it('removes a keyword chip when clicking its cross button', () => {
     render(<GenerativeRadio />)
 
-    const textarea = screen.getByRole('textbox', { name: /Mots-clés/ })
+    const textarea = screen.getByRole('textbox', { name: /Ta direction sonore/ })
     expect(textarea).toHaveValue('minimal, minimal techno')
 
+    openSettings('sound', 'Composition')
     const removeBtn = screen.getByRole('button', { name: 'Retirer minimal' })
     fireEvent.click(removeBtn)
 
@@ -520,11 +542,11 @@ describe('GenerativeRadio', () => {
   it('opens tag catalogue modal, filters tags and allows selecting/toggling tags', () => {
     render(<GenerativeRadio />)
 
-    const openBtn = screen.getByRole('button', { name: /Catalogue des tags/i })
+    const openBtn = screen.getByRole('button', { name: /Explorer les sons/i })
     fireEvent.click(openBtn)
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByText('Vocabulaire de tags & structure')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Explorer les sons' })).toBeInTheDocument()
 
     // Filter by search
     const searchInput = screen.getByPlaceholderText(/Filtrer les tags/i)
@@ -536,7 +558,7 @@ describe('GenerativeRadio', () => {
     fireEvent.click(acidTag)
 
     // The keyword input now contains Acid Techno
-    const textarea = screen.getByRole('textbox', { name: /Mots-clés/ })
+    const textarea = screen.getByRole('textbox', { name: /Ta direction sonore/ })
     expect((textarea as HTMLTextAreaElement).value).toContain('Acid Techno')
 
     // Close modal
@@ -557,6 +579,7 @@ describe('GenerativeRadio', () => {
 
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
+    openSettings('sound', 'Composition')
     // Click "Frise par défaut" to populate standard phases
     fireEvent.click(screen.getByRole('button', { name: 'Frise par défaut' }))
 
@@ -575,7 +598,7 @@ describe('GenerativeRadio', () => {
     fireEvent.click(addOutroBtn)
 
     // Generate and check prompt includes arrangement
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    startRadio()
 
     await waitFor(() => expect(onGenerate).toHaveBeenCalled())
     const sentRequest = onGenerate.mock.calls[0]![0] as { keywords: string; phases: string[] }
@@ -597,6 +620,7 @@ describe('GenerativeRadio', () => {
 
     const { unmount } = render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
+    openSettings('sound', 'Composition')
     expect(screen.getByTestId('radio-fixed-tags-panel')).toBeInTheDocument()
     const dropzone = screen.getByTestId('radio-fixed-tags-dropzone')
     expect(dropzone).toHaveTextContent(/Glisse tes tags ici/i)
@@ -618,7 +642,7 @@ describe('GenerativeRadio', () => {
     expect(window.localStorage.getItem(RADIO_FIXED_TAGS_STORAGE_KEY)).toContain('analog modular')
 
     // Generate and verify fixed tag is always in request
-    fireEvent.click(screen.getByRole('button', { name: '✦ GÉNÉRER LE PROGRAMME' }))
+    startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalled())
     const sent = onGenerate.mock.calls[0]![0] as { keywords: string; fixedTags?: string[] }
     expect(sent.keywords).toContain('analog modular')
@@ -630,6 +654,7 @@ describe('GenerativeRadio', () => {
     expect(screen.getByText('analog modular')).toBeInTheDocument()
     expect(screen.getByText('1 FIXE')).toBeInTheDocument()
 
+    openSettings('sound')
     // Remove fixed tag using its cross
     const removeBtn = screen.getByRole('button', { name: 'Retirer analog modular des tags fixes' })
     fireEvent.click(removeBtn)
