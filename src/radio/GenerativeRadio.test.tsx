@@ -218,14 +218,21 @@ describe('GenerativeRadio', () => {
     render(<GenerativeRadio />)
 
     expect(screen.getByRole('region', { name: 'Égaliseur' })).toBeInTheDocument()
+    const eqCurve = screen.getByRole('img', { name: 'Réponse des filtres audio' }).querySelector('.eq-curve')
+    expect(eqCurve).toBeInTheDocument()
+    const initialCurve = eqCurve?.getAttribute('d')
+    expect(initialCurve).toBeTruthy()
+    expect(screen.queryByText('EN ATTENTE AUDIO')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^DSP/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: /^LIMITER/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('slider', { name: /^PREAMP$/ })).toHaveValue('0')
     expect(screen.getByRole('slider', { name: /^FILTER$/ })).toHaveValue('32')
 
     fireEvent.change(screen.getByRole('slider', { name: /^PREAMP$/ }), { target: { value: '4' } })
+    fireEvent.change(screen.getByRole('slider', { name: /^LOW$/ }), { target: { value: '6' } })
     fireEvent.click(screen.getByRole('button', { name: /^LIMITER/ }))
 
+    expect(eqCurve?.getAttribute('d')).not.toBe(initialCurve)
     expect(screen.getByRole('slider', { name: /^PREAMP$/ })).toHaveValue('4')
     expect(screen.getByRole('button', { name: /^LIMITER/ })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('slider', { name: /^PLAFOND$/ })).toHaveValue('-1')

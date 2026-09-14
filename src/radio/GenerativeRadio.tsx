@@ -238,6 +238,18 @@ const parseKeywords = (value: string): string[] => {
 
 const clamp = (value: number, minimum: number, maximum: number): number => Math.min(maximum, Math.max(minimum, value))
 
+const buildEqCurve = (lowGainDb: number, midGainDb: number, highGainDb: number, enabled: boolean): number[] => {
+  if (!enabled) return new Array(96).fill(0)
+  return Array.from({ length: 96 }, (_, index) => {
+    const frequency = 20 * 1000 ** (index / 95)
+    const lowWeight = 1 / (1 + (frequency / 180) ** 4)
+    const midDistance = Math.log(frequency / 2_200) / Math.log(2)
+    const midWeight = Math.exp(-0.5 * (midDistance / 1.15) ** 2)
+    const highWeight = 1 / (1 + (4_500 / frequency) ** 4)
+    return lowGainDb * lowWeight + midGainDb * midWeight + highGainDb * highWeight
+  })
+}
+
 const hashString = (value: string): number => {
   let hash = 2166136261
   for (let index = 0; index < value.length; index += 1) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619)
@@ -566,7 +578,6 @@ export const GenerativeRadio = ({
   const [limiterEnabled, setLimiterEnabled] = useState(defaultRadioDspSettings.limiterEnabled)
   const [limiterCeilingDb, setLimiterCeilingDb] = useState(defaultRadioDspSettings.limiterCeilingDb)
   const [dspMeter, setDspMeter] = useState(defaultRadioDspMeter)
-  const [eqResponse, setEqResponse] = useState<number[]>([])
   const [activeRecipe, setActiveRecipe] = useState<RadioRecipe | null>(null)
   const [playing, setPlaying] = useState(false)
   const [position, setPosition] = useState(0)
@@ -702,6 +713,10 @@ export const GenerativeRadio = ({
     limiterEnabled,
     limiterCeilingDb,
   }), [dspEnabled, limiterCeilingDb, limiterEnabled, noiseFilter, preampDb, lowGainDb, midGainDb, highGainDb, volume])
+  const eqResponse = useMemo(
+    () => buildEqCurve(lowGainDb, midGainDb, highGainDb, dspEnabled),
+    [dspEnabled, highGainDb, lowGainDb, midGainDb],
+  )
 
   useEffect(() => {
     dspRef.current?.setSettings(radioDspSettings)
@@ -711,7 +726,6 @@ export const GenerativeRadio = ({
     const meterTimer = window.setInterval(() => {
       if (dspRef.current) {
         setDspMeter(dspRef.current.readMeter())
-        setEqResponse(dspRef.current.readFrequencyResponse())
       }
     }, 140)
     return () => window.clearInterval(meterTimer)
@@ -1230,7 +1244,7 @@ export const GenerativeRadio = ({
               {[12, 6, 0, -6, -12].map((value, index) => <text key={value} x="27" y={19 + index * 31} textAnchor="end" className="eq-axis">{value > 0 ? '+' : ''}{value}</text>)}
               {['20', '100', '1k', '10k', '20k Hz'].map((value, index) => <text key={value} x={34 + index * 93} y="167" textAnchor={index === 4 ? 'end' : index === 0 ? 'start' : 'middle'} className="eq-axis">{value}</text>)}
               <path className="eq-zero" d="M34 82H406" />
-              {eqResponse.length > 0 ? <path className="eq-curve" d={eqResponse.map((db, index) => `${index ? 'L' : 'M'}${34 + index / (eqResponse.length - 1) * 372},${82 - clamp(db, -14, 14) * 5}`).join(' ')} /> : <text x="220" y="69" textAnchor="middle" className="eq-wait">EN ATTENTE AUDIO</text>}
+              <path className="eq-curve" d={eqResponse.map((db, index) => `${index ? 'L' : 'M'}${34 + index / (eqResponse.length - 1) * 372},${82 - clamp(db, -14, 14) * 5}`).join(' ')} />
             </svg>
           </div>
           <div className="machine-stereo-meter" aria-label="Niveaux de sortie stéréo">
