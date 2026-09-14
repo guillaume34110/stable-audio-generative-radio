@@ -5,9 +5,15 @@ export type RadioDspSettings = {
   dspAmount: number
   limiterEnabled: boolean
   limiterCeilingDb: number
+  lowGainDb?: number
+  midGainDb?: number
+  highGainDb?: number
+  volume?: number
 }
 
 export type RadioDspMeter = {
+  leftPeakDb?: number
+  rightPeakDb?: number
   inputPeakDb: number
   outputPeakDb: number
   gainReductionDb: number
@@ -17,6 +23,7 @@ export type RadioDspController = {
   setSettings: (settings: RadioDspSettings) => void
   resume: () => Promise<void>
   readMeter: () => RadioDspMeter
+  readFrequencyResponse: () => number[]
   dispose: () => void
 }
 
@@ -27,6 +34,10 @@ export const defaultRadioDspSettings: RadioDspSettings = {
   dspAmount: 54,
   limiterEnabled: true,
   limiterCeilingDb: -1,
+  lowGainDb: 1.5,
+  midGainDb: -0.5,
+  highGainDb: 2,
+  volume: 78,
 }
 
 const clamp = (value: number, minimum: number, maximum: number): number => Math.min(maximum, Math.max(minimum, value))
@@ -58,6 +69,10 @@ const sanitizeSettings = (settings: RadioDspSettings): RadioDspSettings => ({
   dspAmount: clamp(Number(settings.dspAmount) || 0, 0, 100),
   limiterEnabled: settings.limiterEnabled,
   limiterCeilingDb: clamp(Number(settings.limiterCeilingDb) || -1, -6, -0.3),
+  lowGainDb: clamp(settings.lowGainDb ?? 1.5, -12, 12),
+  midGainDb: clamp(settings.midGainDb ?? -0.5, -12, 12),
+  highGainDb: clamp(settings.highGainDb ?? 2, -12, 12),
+  volume: clamp(settings.volume ?? 78, 0, 100),
 })
 
 export const createRadioDsp = (
@@ -80,6 +95,11 @@ export const createRadioDsp = (
   const limiter = context.createDynamicsCompressor()
   const outputMeter = context.createAnalyser()
   const output = context.createGain()
+  const splitter = context.createChannelSplitter(2)
+  const leftMeter = context.createAnalyser()
+  const rightMeter = context.createAnalyser()
+  leftMeter.fftSize = 256
+  rightMeter.fftSize = 256
 
   preamp.gain.value = 1
   intelligentTrim.gain.value = 1
@@ -112,6 +132,9 @@ export const createRadioDsp = (
   limiter.connect(outputMeter)
   outputMeter.connect(output)
   output.connect(context.destination)
+  output.connect(splitter)
+  splitter.connect(leftMeter, 0)
+  splitter.connect(rightMeter, 1)
 
   let settings = sanitizeSettings(initialSettings)
   let disposed = false
@@ -127,16 +150,16 @@ export const createRadioDsp = (
     preamp.gain.setTargetAtTime(dbToGain(settings.preampDb), now, 0.018)
     noiseHighpass.frequency.setTargetAtTime(dsp ? 28 + noiseAmount * 12 : 8, now, 0.045)
     noiseLowpass.frequency.setTargetAtTime(dsp ? 17_000 - noiseAmount * 3_500 : maxFilterFrequency, now, 0.045)
-    body.gain.setTargetAtTime(dsp ? dspAmount * 3.6 : 0, now, 0.08)
-    clarity.gain.setTargetAtTime(dsp ? dspAmount * 2.2 : 0, now, 0.08)
-    air.gain.setTargetAtTime(dsp ? -dspAmount * 3.2 : 0, now, 0.08)
+    body.gain.setTargetAtTime(dsp ? (settings.lowGainDb ?? 0) + dspAmount * 3.6 : 0, now, 0.08)
+    clarity.gain.setTargetAtTime(dsp ? (settings.midGainDb ?? 0) + dspAmount * 2.2 : 0, now, 0.08)
+    air.gain.setTargetAtTime(dsp ? (settings.highGainDb ?? 0) - dspAmount * 3.2 : 0, now, 0.08)
     intelligentTrim.gain.setTargetAtTime(settings.limiterEnabled ? intelligentTrim.gain.value : 1, now, 0.08)
     limiter.threshold.setTargetAtTime(settings.limiterEnabled ? settings.limiterCeilingDb : 0, now, 0.08)
     limiter.knee.setTargetAtTime(settings.limiterEnabled ? 4 : 0, now, 0.08)
     limiter.ratio.setTargetAtTime(settings.limiterEnabled ? 20 : 1, now, 0.08)
     limiter.attack.setTargetAtTime(settings.limiterEnabled ? 0.016 : 0.01, now, 0.08)
     limiter.release.setTargetAtTime(settings.limiterEnabled ? 0.14 : 0.2, now, 0.08)
-    output.gain.setTargetAtTime(settings.limiterEnabled ? dbToGain(-0.15) : 1, now, 0.08)
+    output.gain.setTargetAtTime((settings.volume ?? 78) / 100 * (settings.limiterEnabled ? dbToGain(-0.15) : 1), now, 0.08)
   }
 
   const updateIntelligentTrim = (inputPeakDb: number): void => {
@@ -161,7 +184,7 @@ export const createRadioDsp = (
     updateIntelligentTrim(inputPeakDb)
     const outputPeakDb = peakDb(outputMeter)
     const gainReductionDb = settings.limiterEnabled ? Math.min(0, Number(limiter.reduction) || 0) : 0
-    return { inputPeakDb, outputPeakDb, gainReductionDb }
+    return { inputPeakDb, outputPeakDb, gainReductionDb, leftPeakDb: peakDb(leftMeter), rightPeakDb: peakDb(rightMeter) }
   }
 
   const resume = async (): Promise<void> => {
@@ -183,9 +206,24 @@ export const createRadioDsp = (
     limiter.disconnect()
     outputMeter.disconnect()
     output.disconnect()
+    splitter.disconnect()
+    leftMeter.disconnect()
+    rightMeter.disconnect()
     if (context.state !== 'closed') void context.close()
   }
 
   applySettings()
-  return { setSettings, resume, readMeter, dispose }
+  const readFrequencyResponse = (): number[] => {
+    const frequencies = Float32Array.from({ length: 96 }, (_, index) => 20 * 1000 ** (index / 95))
+    const magnitude = new Float32Array(96)
+    const phase = new Float32Array(96)
+    const response = new Array<number>(96).fill(0)
+    for (const filter of [noiseHighpass, noiseLowpass, body, clarity, air]) {
+      filter.getFrequencyResponse(frequencies, magnitude, phase)
+      for (let index = 0; index < response.length; index += 1) response[index] += gainToDb(magnitude[index] ?? 1)
+    }
+    return response
+  }
+
+  return { setSettings, resume, readMeter, readFrequencyResponse, dispose }
 }

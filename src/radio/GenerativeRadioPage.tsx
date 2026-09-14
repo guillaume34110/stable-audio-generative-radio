@@ -9,6 +9,13 @@ import {
   type StableAudioRadioAdapter,
   type StableAudioRadioModelVariant,
 } from './stable-audio-radio-api'
+import {
+  captureLocalEnginePairing,
+  detectLocalEngine,
+  getLocalEnginePairUrl,
+  requestLocalEngineAccess,
+  type LocalEngineStatus,
+} from './local-engine-client'
 
 type GenerativeRadioPageProps = {
   onBack?: () => void
@@ -37,11 +44,12 @@ const rememberSelectedModel = (modelId: string | null): void => {
 }
 
 export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): ReactElement => {
-  const handleBack = onBack ?? (() => window.history.back())
   const [models, setModels] = useState<StableAudioRadioAdapter[]>([])
   const [modelVariants, setModelVariants] = useState<StableAudioRadioModelVariant[]>([])
   const [selectedModel, setSelectedModel] = useState<StableAudioRadioAdapter | null>(null)
+  const [engineStatus, setEngineStatus] = useState<LocalEngineStatus['state']>('checking')
   const [stableAudioRuntimeReady, setStableAudioRuntimeReady] = useState<boolean | null>(null)
+  const [engineError, setEngineError] = useState<string | null>(null)
   const audioUrlsRef = useRef<Set<string>>(new Set())
 
   const releaseAudioUrl = (url?: string): void => {
@@ -70,12 +78,27 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
     const nextModel = catalog.sfts.find((model) => model.id === storedModelId) ?? catalog.sfts[0] ?? null
     setSelectedModel(nextModel)
     rememberSelectedModel(nextModel?.id ?? null)
+    setEngineError(null)
   }, [])
 
   useEffect(() => {
+    captureLocalEnginePairing()
     let active = true
-    void loadCatalog().catch(() => {
-      if (active) setStableAudioRuntimeReady(false)
+    void detectLocalEngine().then((status) => {
+      if (!active) return
+      setEngineStatus(status.state)
+      if (status.state !== 'connected') {
+        setStableAudioRuntimeReady(false)
+        setEngineError(status.state === 'unpaired'
+          ? 'Le moteur répond, mais cette page doit être appairée avant de charger un modèle.'
+          : 'Le moteur local ne répond pas. Vérifie qu’il est lancé, puis réessaie.')
+        return
+      }
+      void loadCatalog().catch((error: unknown) => {
+        if (!active) return
+        setStableAudioRuntimeReady(false)
+        setEngineError(error instanceof Error ? error.message : 'Connexion au moteur Stable Audio impossible.')
+      })
     })
     return () => {
       active = false
@@ -83,12 +106,32 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
     }
   }, [loadCatalog])
 
+  const handleConnectLocalEngine = async (): Promise<void> => {
+    setEngineError(null)
+    try {
+      const status = await requestLocalEngineAccess()
+      setEngineStatus(status.state)
+      if (status.state !== 'connected') {
+        setStableAudioRuntimeReady(false)
+        setEngineError(status.state === 'unpaired'
+          ? 'Le moteur répond, mais cette page doit être appairée avant de charger un modèle.'
+          : 'Le moteur local ne répond pas. Vérifie qu’il est lancé, puis réessaie.')
+        return
+      }
+      await loadCatalog()
+    } catch (error: unknown) {
+      setStableAudioRuntimeReady(false)
+      setEngineError(error instanceof Error ? error.message : 'Connexion au moteur Stable Audio impossible.')
+    }
+  }
+
   const handleImportModel = async (file: File): Promise<StableAudioRadioAdapter> => {
     const adapter = await uploadStableAudioRadioSft(file)
     setModels((current) => [adapter, ...current.filter((item) => item.id !== adapter.id)])
     setSelectedModel(adapter)
     rememberSelectedModel(adapter.id)
     setStableAudioRuntimeReady(true)
+    setEngineStatus('connected')
     return adapter
   }
 
@@ -139,17 +182,22 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
   }
 
   const reconnect = async (): Promise<void> => {
-    setStableAudioRuntimeReady(null)
-    try { await loadCatalog() } catch { setStableAudioRuntimeReady(false) }
+    await handleConnectLocalEngine()
   }
 
+  const engineMessage = engineError
+    ?? (stableAudioRuntimeReady === false
+      ? 'Le runtime Stable Audio 3 n’est pas prêt dans le moteur local.'
+      : engineStatus === 'connected'
+        ? 'Moteur local prêt. Tes modèles restent sur ta machine après rechargement.'
+        : 'Appaire le moteur local pour charger un modèle et lancer la radio.')
+
   return <div className="radio-page" data-testid="generative-radio-page">
-    <header className="radio-page-header">
-      <a className="radio-page-brand" href="/" aria-label="radio.studio, accueil"><span aria-hidden="true">∿</span>radio.studio</a>
-      {onBack && <button type="button" className="radio-page-back" onClick={handleBack} aria-label="Retourner au player">← Retour au player</button>}
-    </header>
     <main className="radio-page-main">
       <GenerativeRadio
+        onBack={onBack}
+        engineMessage={engineMessage}
+        pairingUrl={engineStatus === 'unpaired' ? getLocalEnginePairUrl() : undefined}
         runtimeReady={stableAudioRuntimeReady}
         onReconnect={reconnect}
         availableModels={models}

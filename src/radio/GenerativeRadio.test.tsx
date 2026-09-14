@@ -1,19 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GenerativeRadio, RADIO_KEYWORDS_STORAGE_KEY, RADIO_FIXED_TAGS_STORAGE_KEY } from './GenerativeRadio'
 
-const openSettings = (section: 'sound' | 'model' = 'sound', disclosure?: string) => {
-  fireEvent.click(screen.getByRole('button', { name: 'Réglages' }))
-  if (section === 'model') fireEvent.click(screen.getByRole('button', { name: 'Le moteur' }))
-  if (disclosure) fireEvent.click(screen.getByText(disclosure, { selector: 'summary, summary strong' }))
-}
-const closeSettings = () => {
-  if (screen.queryByRole('dialog', { name: 'Réglages' })) fireEvent.click(screen.getByRole('button', { name: 'Retour à la radio' }))
-}
-const startRadio = () => {
-  closeSettings()
-  fireEvent.click(screen.getByRole('button', { name: 'Démarrer la radio' }))
-}
+const startRadio = () => fireEvent.click(screen.getByRole('button', { name: 'Démarrer la radio' }))
 
 describe('GenerativeRadio', () => {
   beforeEach(() => {
@@ -22,17 +11,59 @@ describe('GenerativeRadio', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
   })
 
-  it('shows only the direction, playback action, tempo and energy on first visit', () => {
+  it('shows the unified machine surface and its essential physical controls on first visit', () => {
     render(<GenerativeRadio />)
 
     expect(screen.getByTestId('generative-radio')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'À ton rythme.' })).toBeInTheDocument()
-    expect(screen.getAllByRole('slider')).toHaveLength(2)
+    expect(screen.getByRole('heading', { name: 'radio.studio' })).toBeInTheDocument()
+    expect(screen.getAllByRole('slider')).toHaveLength(19)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Variante du modèle' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /Ta direction sonore/ })).toHaveValue('minimal, minimal techno')
-    openSettings()
-    expect(screen.getByRole('slider', { name: /Influence du modèle/ })).toHaveValue('100')
+    expect(screen.getByRole('slider', { name: /^Influence$/ })).toHaveValue('100')
+  })
+
+  it('focuses inline model setup from the primary action without losing the written direction', () => {
+    const onGenerate = vi.fn()
+    render(<GenerativeRadio runtimeReady={false} onGenerate={onGenerate} />)
+    const direction = screen.getByRole('textbox', { name: /Ta direction sonore/ })
+    fireEvent.change(direction, { target: { value: 'soft piano, warm tape' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Configurer la radio' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Connecte le moteur local')
+    expect(screen.getByRole('combobox', { name: 'Variante du modèle' })).toHaveFocus()
+    expect(onGenerate).not.toHaveBeenCalled()
+    expect(direction).toHaveValue('soft piano, warm tape')
+  })
+
+  it('keeps an invalid model import error visible on the machine', () => {
+    render(<GenerativeRadio />)
+    fireEvent.change(screen.getByLabelText('Charger un modèle Stable Audio 3'), {
+      target: { files: [new File(['invalid'], 'notes.txt', { type: 'text/plain' })] },
+    })
+    expect(screen.getByRole('alert')).toHaveTextContent('format .safetensors')
+    expect(screen.getByTestId('generative-radio')).toContainElement(screen.getByRole('alert'))
+  })
+
+  it('reports reconnect failure and allows another attempt', async () => {
+    const onReconnect = vi.fn().mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce(undefined)
+    render(<GenerativeRadio runtimeReady={false} onReconnect={onReconnect} />)
+    fireEvent.click(screen.getByRole('button', { name: 'ENGINE' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Connexion impossible'))
+    fireEvent.click(screen.getByRole('button', { name: 'ENGINE' }))
+    await waitFor(() => expect(onReconnect).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('pins a sound and reorders phases without dragging', () => {
+    render(<GenerativeRadio />)
+    fireEvent.click(screen.getByRole('button', { name: 'minimal techno' }))
+    fireEvent.click(screen.getByRole('button', { name: 'PIN' }))
+    expect(window.localStorage.getItem(RADIO_FIXED_TAGS_STORAGE_KEY)).toContain('minimal techno')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Ajouter une phase' }), { target: { value: 'Intro' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Ajouter une phase' }), { target: { value: 'Drop' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Déplacer la phase à gauche' }))
+    expect(JSON.parse(window.localStorage.getItem('onus-generative-radio-phases') ?? '[]')).toEqual(['Drop', 'Intro'])
   })
 
   it('imports a valid Stable Audio 3 model without exposing the local file path', async () => {
@@ -48,12 +79,10 @@ describe('GenerativeRadio', () => {
     render(<GenerativeRadio onImportModel={onImportModel} />)
     const file = new File(['weights'], 'my-style.safetensors', { type: 'application/octet-stream' })
 
-    openSettings('model')
     fireEvent.change(screen.getByLabelText('Charger un modèle Stable Audio 3'), { target: { files: [file] } })
 
     await waitFor(() => expect(onImportModel).toHaveBeenCalledWith(file))
-    expect(await screen.findByText('my-style.safetensors', { selector: 'strong' })).toBeInTheDocument()
-    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(await screen.findByText('my-style.safetensors', { selector: 'option' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retirer le modèle sélectionné' })).toBeInTheDocument()
     expect(screen.queryByText('/Users/')).not.toBeInTheDocument()
   })
@@ -135,8 +164,7 @@ describe('GenerativeRadio', () => {
     expect(requests[0]!.drift).toBe(26)
     expect(requests[1]!.drift).toBe(requests[0]!.drift)
     expect(requests[1]!.keywords).not.toBe(requests[0]!.keywords)
-    const activeTagCount = requests[0]!.keywords.split(',').map((tag: string) => tag.trim()).filter(Boolean).length
-    expect(screen.getByTestId('current-radio-track')).toHaveTextContent(`${activeTagCount}/10 TAGS`)
+    expect(screen.getByTestId('current-radio-track')).toHaveTextContent(requests[0]!.keywords)
   })
 
   it('keeps fixed tags as a base and samples optional tags from the user field', async () => {
@@ -189,19 +217,18 @@ describe('GenerativeRadio', () => {
   it('exposes the real-time pro monitoring controls without changing the generated recipe', () => {
     render(<GenerativeRadio />)
 
-    openSettings('sound', 'Traitement audio')
-    expect(screen.getByTestId('radio-dsp-panel')).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: /DSP PRO \/ MONITORING/ })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /LIMITER INTELLIGENT/ })).toBeChecked()
-    expect(screen.getByRole('slider', { name: /Préampli/ })).toHaveValue('0')
-    expect(screen.getByRole('slider', { name: /Filtre bruit/ })).toHaveValue('32')
+    expect(screen.getByRole('region', { name: 'Égaliseur' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^DSP/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /^LIMITER/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('slider', { name: /^PREAMP$/ })).toHaveValue('0')
+    expect(screen.getByRole('slider', { name: /^FILTER$/ })).toHaveValue('32')
 
-    fireEvent.change(screen.getByRole('slider', { name: /Préampli/ }), { target: { value: '4' } })
-    fireEvent.click(screen.getByRole('checkbox', { name: /LIMITER INTELLIGENT/ }))
+    fireEvent.change(screen.getByRole('slider', { name: /^PREAMP$/ }), { target: { value: '4' } })
+    fireEvent.click(screen.getByRole('button', { name: /^LIMITER/ }))
 
-    expect(screen.getByRole('slider', { name: /Préampli/ })).toHaveValue('4')
-    expect(screen.getByRole('checkbox', { name: /LIMITER INTELLIGENT/ })).not.toBeChecked()
-    expect(screen.getByRole('slider', { name: /Plafond/ })).toBeDisabled()
+    expect(screen.getByRole('slider', { name: /^PREAMP$/ })).toHaveValue('4')
+    expect(screen.getByRole('button', { name: /^LIMITER/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('slider', { name: /^PLAFOND$/ })).toHaveValue('-1')
   })
 
   it('can launch the persisted Berlin INT8 variant without a second model upload', async () => {
@@ -240,9 +267,9 @@ describe('GenerativeRadio', () => {
     ]
     render(<GenerativeRadio onGenerate={onGenerate} availableModelVariants={modelVariants} />)
 
-    openSettings('model')
     fireEvent.change(screen.getByLabelText(/Variante du modèle/), { target: { value: 'int8' } })
-    expect(screen.getByText('INT8 · modèle Berlin fusionné', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Variante du modèle' })).toHaveValue('int8')
+    expect(screen.getByRole('slider', { name: 'Influence' })).toBeDisabled()
     startRadio()
 
     await waitFor(() => expect(onGenerate).toHaveBeenCalled())
@@ -254,7 +281,7 @@ describe('GenerativeRadio', () => {
     }))
   })
 
-  it('prepares a hidden independent programme from the finished programme and keeps one visible flow', async () => {
+  it('prepares an independent programme and shows current and next metadata on the facade', async () => {
     const onGenerate = vi.fn()
       .mockResolvedValueOnce({ audioUrl: 'blob:first', id: 'c'.repeat(16), durationSeconds: 240 })
       .mockResolvedValueOnce({ audioUrl: 'blob:second', id: 'd'.repeat(16), durationSeconds: 240 })
@@ -272,7 +299,7 @@ describe('GenerativeRadio', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /Ta direction sonore/ }), { target: { value: 'user tag alpha, user tag beta' } })
     startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
-    expect(screen.getAllByText('01 · FLUX ACTIF')).toHaveLength(1)
+    expect(screen.getAllByText('01 / NOW')).toHaveLength(1)
     const first = onGenerate.mock.calls[0]![0]
     const continuation = onGenerate.mock.calls[1]![0]
     expect(first.continuationFromId).toBeNull()
@@ -284,25 +311,24 @@ describe('GenerativeRadio', () => {
     expect(continuation.durationSeconds).toBeGreaterThanOrEqual(120)
     expect(continuation.durationSeconds).toBeLessThanOrEqual(360)
     expect(screen.getByRole('status')).toHaveTextContent('Morceau indépendant prêt')
-    expect(screen.getByTestId('current-radio-track')).toHaveTextContent('01 · FLUX ACTIF')
-    for (const label of ['KEY', 'BPM', 'DURÉE', 'MODE', 'ÉVOLUTION', 'DÉRIVE', 'ÉNERGIE', 'MATIÈRE', 'MODÈLE', 'SEED', 'PROMPT UTILISÉ', 'GENERATION ID']) {
+    expect(screen.getByTestId('current-radio-track')).toHaveTextContent('01 / NOW')
+    for (const label of ['TONALITÉ', 'BPM CIBLE', 'MODE', 'ÉVOLUTION', 'ÉNERGIE', 'TEXTURE', 'MODÈLE', 'SEED', 'TAGS', 'STRUCT.']) {
       expect(screen.getByTestId('current-radio-track')).toHaveTextContent(label)
     }
-    expect(screen.getByTestId('current-radio-track')).toHaveTextContent('PROGRAMME')
+    expect(screen.getByTestId('current-radio-track')).toHaveTextContent('CONTINU')
     expect(screen.getByTestId('current-radio-track')).toHaveTextContent(onGenerate.mock.calls[0]![0].keywords)
-    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('02 · UP NEXT')
+    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('02 / NEXT')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('user tag alpha Relay')
-    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('READY / PRÊT')
-    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('PROMPT UTILISÉ · 2/2 TAGS')
+    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('READY')
+    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('TAGS')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent(continuation.keywords)
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('DURÉE')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('MODE')
-    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('INDÉPENDANT')
+    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('LIBRE')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('ÉVOLUTION')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('MODÈLE')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent(String(continuation.seed))
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent(continuation.modelVariant.toUpperCase())
-    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('GENERATION ID · ' + 'd'.repeat(16))
 
     fireEvent.click(screen.getByRole('button', { name: 'Repartir de cette direction ↗' }))
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
@@ -447,14 +473,13 @@ describe('GenerativeRadio', () => {
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
 
     const next = screen.getByTestId('next-radio-track')
-    for (const label of ['KEY', 'BPM', 'DURÉE', 'MODE', 'ÉVOLUTION', 'DÉRIVE', 'ÉNERGIE', 'MATIÈRE', 'MODÈLE', 'SEED', 'PROMPT UTILISÉ', 'GENERATION ID']) {
+    for (const label of ['TONALITÉ', 'BPM CIBLE', 'MODE', 'ÉVOLUTION', 'ÉNERGIE', 'TEXTURE', 'MODÈLE', 'SEED', 'TAGS', 'STRUCT.']) {
       expect(next).toHaveTextContent(label)
     }
-    expect(next).toHaveTextContent('BUILDING / 4%')
-    expect(next).toHaveTextContent('EN PRÉPARATION')
+    expect(next).toHaveTextContent('CALCUL 4%')
 
     resolveSecond(secondResult)
-    await waitFor(() => expect(next).toHaveTextContent('READY / PRÊT'))
+    await waitFor(() => expect(next).toHaveTextContent('READY'))
   })
 
   it('exposes model diffusion settings and forwards them to generation', async () => {
@@ -469,15 +494,14 @@ describe('GenerativeRadio', () => {
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    openSettings('model', 'Réglages de génération')
-    expect(screen.getByTestId('radio-model-options-panel')).toBeInTheDocument()
-    expect(screen.getByRole('slider', { name: /Steps d’échantillonnage/ })).toHaveValue('8')
-    expect(screen.getByRole('slider', { name: /Guidance CFG/ })).toHaveValue('1')
-    expect(screen.getByRole('slider', { name: /Guidance APG/ })).toHaveValue('1')
+    expect(screen.getByRole('region', { name: 'Génération' })).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: /^STEPS$/ })).toHaveValue('8')
+    expect(screen.getByRole('slider', { name: /^CFG$/ })).toHaveValue('1')
+    expect(screen.getByRole('slider', { name: /^APG$/ })).toHaveValue('1')
 
-    fireEvent.change(screen.getByRole('slider', { name: /Steps d’échantillonnage/ }), { target: { value: '14' } })
-    fireEvent.change(screen.getByRole('slider', { name: /Guidance CFG/ }), { target: { value: '2.5' } })
-    fireEvent.change(screen.getByRole('slider', { name: /Guidance APG/ }), { target: { value: '0.75' } })
+    fireEvent.change(screen.getByRole('slider', { name: /^STEPS$/ }), { target: { value: '14' } })
+    fireEvent.change(screen.getByRole('slider', { name: /^CFG$/ }), { target: { value: '2.5' } })
+    fireEvent.change(screen.getByRole('slider', { name: /^APG$/ }), { target: { value: '0.75' } })
 
     startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalled())
@@ -486,6 +510,10 @@ describe('GenerativeRadio', () => {
       cfg: 2.5,
       apg: 0.75,
     }))
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+    fireEvent.change(screen.getByRole('slider', { name: /^STEPS$/ }), { target: { value: '19' } })
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
+    expect(onGenerate.mock.calls[2]![0]).toEqual(expect.objectContaining({ steps: 19 }))
   })
 
   it('persists keywords to localStorage and restores them across mounts', () => {
@@ -499,41 +527,35 @@ describe('GenerativeRadio', () => {
     fireEvent.change(textarea, { target: { value: 'deep tech, rolling groove' } })
     expect(window.localStorage.getItem(RADIO_KEYWORDS_STORAGE_KEY)).toBe('deep tech, rolling groove')
 
-    // Reset button restores default and updates storage
-    const resetBtn = screen.getByRole('button', { name: 'Réinitialiser' })
-    fireEvent.click(resetBtn)
-    expect(textarea).toHaveValue('minimal, minimal techno')
-    expect(window.localStorage.getItem(RADIO_KEYWORDS_STORAGE_KEY)).toBe('minimal, minimal techno')
-
     unmount()
+    render(<GenerativeRadio />)
+    expect(screen.getByRole('textbox', { name: /Ta direction sonore/ })).toHaveValue('deep tech, rolling groove')
+
   })
 
-  it('edits excluded sounds in advanced settings', () => {
+  it('edits and removes excluded sounds on the facade', () => {
     render(<GenerativeRadio />)
 
-    openSettings('model', 'Réglages de génération')
-    const negTextarea = screen.getByRole('textbox', { name: /Prompt négatif/ })
-    expect(negTextarea).toHaveClass('radio-keyword-textarea')
+    const negTextarea = screen.getByRole('textbox', { name: /Exclusions sonores/ })
 
     // Modifying negative prompt displays negative chips underneath
     fireEvent.change(negTextarea, { target: { value: 'vocals, static noise, glitch' } })
 
-    const chipsContainer = screen.getByLabelText('Tags exclus de la génération')
-    expect(chipsContainer).toBeInTheDocument()
-    expect(chipsContainer).toHaveClass('radio-keyword-chips', 'is-negative')
-    expect(screen.getByText('vocals')).toBeInTheDocument()
-    expect(screen.getByText('static noise')).toBeInTheDocument()
-    expect(screen.getByText('glitch')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'static noise' }))
+    const exclude = document.querySelector('.machine-exclude') as HTMLElement
+    fireEvent.click(within(exclude).getByRole('button', { name: 'REMOVE' }))
+    expect(negTextarea).toHaveValue('vocals, glitch')
+
   })
 
-  it('removes a keyword chip when clicking its cross button', () => {
+  it('removes the selected keyword using the physical REMOVE key', () => {
     render(<GenerativeRadio />)
 
     const textarea = screen.getByRole('textbox', { name: /Ta direction sonore/ })
     expect(textarea).toHaveValue('minimal, minimal techno')
 
-    openSettings('sound', 'Composition')
-    const removeBtn = screen.getByRole('button', { name: 'Retirer minimal' })
+    fireEvent.click(screen.getByRole('button', { name: 'minimal' }))
+    const removeBtn = within(document.querySelector('.machine-direction') as HTMLElement).getByRole('button', { name: 'REMOVE' })
     fireEvent.click(removeBtn)
 
     expect(textarea).toHaveValue('minimal techno')
@@ -579,23 +601,13 @@ describe('GenerativeRadio', () => {
 
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    openSettings('sound', 'Composition')
-    // Click "Frise par défaut" to populate standard phases
-    fireEvent.click(screen.getByRole('button', { name: 'Frise par défaut' }))
-
-    const track = screen.getByLabelText('Séquence chronologique des phases')
-    expect(track).toHaveTextContent('Intro')
-    expect(track).toHaveTextContent('Drop')
-    expect(track).toHaveTextContent('Climax')
-
-    // Remove one phase using its cross
-    const removeIntroBtn = screen.getByRole('button', { name: 'Retirer la phase Intro en position 1' })
-    fireEvent.click(removeIntroBtn)
-    expect(track).not.toHaveTextContent('Intro')
-
-    // Add a phase from the palette
-    const addOutroBtn = screen.getByRole('button', { name: 'Ajouter Outro' })
-    fireEvent.click(addOutroBtn)
+    const phases = screen.getByRole('combobox', { name: 'Ajouter une phase' })
+    fireEvent.change(phases, { target: { value: 'Intro' } })
+    fireEvent.change(phases, { target: { value: 'Drop' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sélectionner Intro, position 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Retirer la phase sélectionnée' }))
+    expect(screen.queryByRole('button', { name: 'Sélectionner Intro, position 1' })).not.toBeInTheDocument()
+    fireEvent.change(phases, { target: { value: 'Outro' } })
 
     // Generate and check prompt includes arrangement
     startRadio()
@@ -607,7 +619,7 @@ describe('GenerativeRadio', () => {
     expect(sentRequest.phases).toContain('Drop')
   })
 
-  it('renders fixed tags panel with dropzone and supports drag-and-drop and persistence', async () => {
+  it('pins a tag on the facade, persists it and includes it in every request', async () => {
     const onGenerate = vi.fn().mockResolvedValue({ audioUrl: 'blob:audio', id: 'gen-fixed', durationSeconds: 240 })
     const selectedModel = {
       id: 'f'.repeat(32),
@@ -620,23 +632,9 @@ describe('GenerativeRadio', () => {
 
     const { unmount } = render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
 
-    openSettings('sound', 'Composition')
-    expect(screen.getByTestId('radio-fixed-tags-panel')).toBeInTheDocument()
-    const dropzone = screen.getByTestId('radio-fixed-tags-dropzone')
-    expect(dropzone).toHaveTextContent(/Glisse tes tags ici/i)
-    expect(screen.getByText('0 FIXE')).toBeInTheDocument()
-
-    // Simulate drop of a tag into the fixed dropzone
-    const dataTransfer = {
-      data: { 'text/tag': 'analog modular', 'text/plain': 'analog modular' } as Record<string, string>,
-      getData: (type: string) => dataTransfer.data[type] || '',
-      setData: (type: string, val: string) => { dataTransfer.data[type] = val },
-    }
-    fireEvent.dragOver(dropzone)
-    fireEvent.drop(dropzone, { dataTransfer })
-
-    expect(screen.getByText('analog modular')).toBeInTheDocument()
-    expect(screen.getByText('1 FIXE')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ta direction sonore' }), { target: { value: 'analog modular' } })
+    fireEvent.click(screen.getByRole('button', { name: 'analog modular' }))
+    fireEvent.click(screen.getByRole('button', { name: 'PIN' }))
 
     // Verify localStorage persistence
     expect(window.localStorage.getItem(RADIO_FIXED_TAGS_STORAGE_KEY)).toContain('analog modular')
@@ -651,14 +649,10 @@ describe('GenerativeRadio', () => {
     // Test unmount and restore from localStorage
     unmount()
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
-    expect(screen.getByText('analog modular')).toBeInTheDocument()
-    expect(screen.getByText('1 FIXE')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '◆ analog modular' }))
+    expect(screen.getByRole('button', { name: 'PIN' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'PIN' }))
+    expect(window.localStorage.getItem(RADIO_FIXED_TAGS_STORAGE_KEY)).toBe('[]')
 
-    openSettings('sound')
-    // Remove fixed tag using its cross
-    const removeBtn = screen.getByRole('button', { name: 'Retirer analog modular des tags fixes' })
-    fireEvent.click(removeBtn)
-    expect(screen.queryByText('analog modular')).not.toBeInTheDocument()
-    expect(screen.getByText('0 FIXE')).toBeInTheDocument()
   })
 })

@@ -21,6 +21,7 @@ class MockAudioNode {
   readonly connect = vi.fn(<T>(destination: T): T => destination)
   readonly disconnect = vi.fn()
   readonly getFloatTimeDomainData = vi.fn((samples: Float32Array) => samples.fill(0))
+  readonly getFrequencyResponse = vi.fn((_frequencies: Float32Array, magnitude: Float32Array, phase: Float32Array) => { magnitude.fill(1); phase.fill(0) })
 }
 
 class MockAudioContext {
@@ -39,6 +40,7 @@ class MockAudioContext {
   constructor() { MockAudioContext.latest = this }
 
   readonly createMediaElementSource = vi.fn(() => this.source as unknown as MediaElementAudioSourceNode)
+  readonly createChannelSplitter = vi.fn(() => new MockAudioNode() as unknown as ChannelSplitterNode)
   readonly createGain = vi.fn(() => {
     const node = new MockAudioNode()
     this.gains.push(node)
@@ -76,7 +78,7 @@ describe('radio DSP monitoring chain', () => {
     expect(context.source.connect).toHaveBeenCalledWith(context.gains[0])
     expect(context.gains).toHaveLength(3)
     expect(context.filters).toHaveLength(5)
-    expect(context.analysers).toHaveLength(2)
+    expect(context.analysers).toHaveLength(4)
     expect(context.compressors).toHaveLength(1)
     expect(context.compressors[0]!.threshold.value).toBe(-1)
     expect(context.compressors[0]!.ratio.value).toBe(20)
@@ -85,6 +87,15 @@ describe('radio DSP monitoring chain', () => {
     expect(context.gains[0]!.gain.value).toBeCloseTo(10 ** (6 / 20), 6)
     expect(context.compressors[0]!.ratio.value).toBe(1)
     expect(context.compressors[0]!.threshold.value).toBe(0)
+    controller.setSettings({ ...defaultRadioDspSettings, dspAmount: 0, lowGainDb: 4, midGainDb: -3, highGainDb: 6, volume: 0 })
+    expect(context.filters.slice(2).map((filter) => filter.gain.value)).toEqual([4, -3, 6])
+    expect(context.gains[2]!.gain.value).toBe(0)
+    expect(controller.readFrequencyResponse()).toEqual(new Array(96).fill(0))
+    context.analysers[2]!.getFloatTimeDomainData.mockImplementation((samples) => samples.fill(.5))
+    context.analysers[3]!.getFloatTimeDomainData.mockImplementation((samples) => samples.fill(.1))
+    const stereo = controller.readMeter()
+    expect(stereo.leftPeakDb).toBeCloseTo(-6.02, 2)
+    expect(stereo.rightPeakDb).toBeCloseTo(-20, 2)
   })
 
   it('adapts the limiter input trim when a loud peak approaches the ceiling', () => {

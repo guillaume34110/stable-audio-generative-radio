@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type ReactElement } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ChangeEvent, type CSSProperties, type ReactElement } from 'react'
 import { RadioDialog } from './RadioDialog'
 import type {
   StableAudioRadioAdapter,
@@ -14,9 +14,7 @@ import {
 } from './radio-dsp'
 import {
   CATEGORY_LABELS,
-  DEFAULT_PHASE_SEQUENCE,
   formatPhasesPrompt,
-  getTagCategory,
   STABLE_AUDIO_TAGS,
   STABLE_AUDIO_TAG_CATALOG_NOTE,
   TRACK_PHASES,
@@ -222,14 +220,6 @@ const evolutionLabel = (value: RadioEvolution): string => evolutionLabels.find((
 
 const formatClock = (seconds: number): string => `${Math.floor(Math.max(0, seconds) / 60)}:${String(Math.floor(Math.max(0, seconds) % 60)).padStart(2, '0')}`
 
-const formatDecibels = (value: number): string => value <= -59 ? '-∞ dB' : `${value > 0 ? '+' : ''}${value.toFixed(1)} dB`
-
-const formatBytes = (bytes: number): string => {
-  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} Go`
-  if (bytes >= 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} Mo`
-  return `${Math.max(1, Math.round(bytes / 1024))} Ko`
-}
-
 const parseKeywords = (value: string): string[] => {
   const seen = new Set<string>()
   return value
@@ -356,7 +346,7 @@ const trackFromRecipe = (
   id,
   title: titleForKeywords(recipe.tags, titleIndex),
   bpm: recipe.bpm,
-  key: 'F#m',
+  key: '—',
   mode,
   evolution: recipe.evolution,
   durationSeconds: recipe.durationSeconds,
@@ -373,7 +363,7 @@ const trackFromResult = (
   ...trackFromRecipe(recipe, titleIndex, mode, result.id ?? Date.now()),
   title: result.title ?? titleForKeywords(recipe.tags, titleIndex),
   bpm: recipe.bpm,
-  key: result.key ?? 'F#m',
+  key: result.key ?? '—',
   durationSeconds: result.durationSeconds ?? recipe.durationSeconds,
   audioUrl: result.audioUrl,
   state: 'ready',
@@ -401,52 +391,84 @@ const buildContinuationRecipe = (
   negativePrompt: sourceRecipe.negativePrompt,
 }, variation, true)
 
-type RadioTrackCardProps = {
-  track: RadioTrack
-  slot: 'current' | 'next'
-  statusLabel: string
-  building?: boolean
+const MachineKey = ({ className = '', children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>): ReactElement =>
+  <button {...props} className={className}>
+    {className.includes('machine-generate') && ['machine-button-frame', 'machine-button-cap'].map((layer) =>
+      <span key={layer} className={`machine-button-skin ${layer}`} aria-hidden="true">{[[651, 47], [698, 171], [869, 47]].map(([x, width]) =>
+        <svg key={x} viewBox={`${x} 998 ${width} 153`} preserveAspectRatio="none"><image href="/assets/hardware/components-v1.png" width="1254" height="1254" /></svg>
+      )}</span>
+    )}
+    <span className="machine-key-label">{children}</span>
+  </button>
+
+type MachineKnobProps = {
+  id: string
+  label: string
+  value: number
+  min: number
+  max: number
+  step?: number
+  display: string
+  onChange: (value: number) => void
+  accent?: 'lime' | 'cyan' | 'orange' | 'pink' | 'red'
+  disabled?: boolean
 }
 
-const RadioTrackCard = ({ track, slot, statusLabel, building = false }: RadioTrackCardProps): ReactElement => {
-  const isCurrent = slot === 'current'
-  const trackClassName = `radio-queue-row is-${slot}${building ? ' is-building' : ''}`
-  return <div className={trackClassName} data-testid={isCurrent ? 'current-radio-track' : 'next-radio-track'} aria-label={isCurrent ? 'Morceau actif' : 'Prochain morceau'}>
-    <div className="radio-queue-track-heading"><span>{isCurrent ? '01 · FLUX ACTIF' : '02 · UP NEXT'}</span><b>{statusLabel}</b></div>
-    <strong className="radio-queue-title">{track.title}</strong>
-    <dl className="radio-track-info-grid">
-      <div><dt>KEY</dt><dd>{track.key}</dd></div>
-      <div><dt>BPM CIBLE</dt><dd>{track.bpm}</dd></div>
-      <div><dt>DURÉE</dt><dd>{formatClock(track.durationSeconds)}</dd></div>
-      <div><dt>MODE</dt><dd>{track.mode === 'independent' ? 'INDÉPENDANT' : 'PROGRAMME'}</dd></div>
-      <div><dt>ÉVOLUTION</dt><dd>{evolutionLabel(track.recipe.evolution)}</dd></div>
-      <div><dt>DÉRIVE MAX</dt><dd>±{Math.round(track.recipe.drift / 4)} BPM · microtiming</dd></div>
-      <div><dt>ÉNERGIE</dt><dd>{track.recipe.energy}%</dd></div>
-      <div><dt>MATIÈRE</dt><dd>{track.recipe.texture}%</dd></div>
-      <div><dt>MODÈLE</dt><dd>{track.recipe.modelVariant.toUpperCase()} · {Math.round(track.recipe.loraStrength * 100)}%</dd></div>
-      <div><dt>STEPS</dt><dd>{track.recipe.steps ?? defaultSteps}</dd></div>
-      <div><dt>CFG / APG</dt><dd>{(track.recipe.cfg ?? defaultCfg).toFixed(1)} / {(track.recipe.apg ?? defaultApg).toFixed(2)}</dd></div>
-      <div><dt>SEED</dt><dd>{track.recipe.seed}</dd></div>
-      {track.recipe.phases && track.recipe.phases.length > 0 && (
-        <div style={{ gridColumn: 'span 3' }}>
-          <dt>STRUCTURE / PHASES</dt>
-          <dd>{track.recipe.phases.join(' → ')}</dd>
-        </div>
-      )}
-    </dl>
-    <div className="radio-track-prompt" aria-label={isCurrent ? 'Prompt du morceau actif' : 'Prompt de la prochaine génération'}>
-      <span>PROMPT UTILISÉ · {track.recipe.tags.length}/{track.recipe.keywordPool.length} TAGS</span>
-      <p>{track.recipe.keywords}</p>
-    </div>
-    <small className="radio-track-id">GENERATION ID · {track.state === 'queued' ? 'EN PRÉPARATION' : String(track.id)}</small>
-  </div>
+const MachineKnob = ({ id, label, value, min, max, step = 1, display, onChange, accent = 'lime', disabled = false }: MachineKnobProps): ReactElement => {
+  const initialValue = useRef(value)
+  const drag = useRef<{ x: number; y: number; value: number } | null>(null)
+  const ratio = Math.max(0, Math.min(1, (value - min) / (max - min)))
+  const style = { '--knob-angle': `${-135 + ratio * 270}deg`, '--knob-arc': `${ratio * 270}deg` } as CSSProperties
+  return <label className={`machine-knob is-${accent} ${disabled ? 'is-disabled' : ''}`} htmlFor={id}>
+    <span className="machine-knob-label">{label}</span>
+    <span className="machine-knob-control" style={style}>
+      <span className="machine-knob-body" aria-hidden="true">
+        <svg className="machine-led-ring" viewBox="0 0 100 100"><path className="machine-led-track" d="M17.47 82.53A46 46 0 1 1 82.53 82.53" /><path className="machine-led-fill" d="M17.47 82.53A46 46 0 1 1 82.53 82.53" pathLength="100" strokeDasharray={`${ratio * 100} 100`} /></svg>
+        <i />
+      </span>
+      <input id={id} type="range" min={min} max={max} step={step} value={value} disabled={disabled} aria-label={label} aria-valuetext={display}
+        onChange={(event) => { if (!drag.current) onChange(event.currentTarget.valueAsNumber) }}
+        onPointerDown={(event) => { event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, y: event.clientY, value } }}
+        onPointerMove={(event) => { if (!drag.current) return; const delta = (drag.current.y - event.clientY + (event.clientX - drag.current.x) * .35) * (max - min) / (event.shiftKey ? 1800 : 180); onChange(Number(clamp(Math.round((drag.current.value + delta) / step) * step, min, max).toFixed(4))) }}
+        onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }}
+        onDoubleClick={() => onChange(initialValue.current)} />
+    </span>
+    <span className="machine-screen machine-knob-value" aria-hidden="true">{display}</span>
+  </label>
 }
-
-const percentStyle = (value: number): CSSProperties => ({ '--radio-fill': `${value}%` } as CSSProperties)
 
 const defaultRadioDspMeter: RadioDspMeter = { inputPeakDb: -60, outputPeakDb: -60, gainReductionDb: 0 }
 
+type TrackReadoutProps = {
+  track: RadioTrack | null
+  next?: boolean
+  status: string
+  progress: number
+  position?: number
+}
+
+const TrackReadout = ({ track, next = false, status, progress, position = 0 }: TrackReadoutProps): ReactElement =>
+  <section className={`machine-panel machine-track-panel ${next ? 'is-next' : 'is-current'}`} aria-label={next ? 'Prochain morceau' : 'Morceau actif'} data-testid={next ? 'next-radio-track' : 'current-radio-track'}>
+    <h2 className="machine-silkscreen">{next ? 'À SUIVRE' : 'EN LECTURE'}</h2>
+    <div className="machine-screen machine-track-screen">
+      <div className="machine-screen-head"><span>{next ? '02 / NEXT' : '01 / NOW'}</span><b>{status}</b></div>
+      <h3 title={track?.title}>{track?.title ?? (next ? 'Prochain morceau en attente' : 'Aucun morceau chargé')}</h3>
+      <div className="machine-track-clock"><strong>{track ? formatClock(next ? track.durationSeconds : position) : '--:--'}</strong><span>{next ? (track?.audioUrl ? 'DURÉE' : 'DURÉE CIBLE') : `/ ${track ? formatClock(track.durationSeconds) : '--:--'}`}</span><div className="machine-progress" aria-label={next ? 'Préparation du prochain morceau' : 'Avancement du morceau'}><i style={{ width: `${progress}%` }} /></div></div>
+      <dl className="machine-data-grid">
+        {[
+          ['BPM CIBLE', track?.bpm], ['TONALITÉ', track?.key], ['ÉNERGIE', track ? `${track.recipe.energy}%` : null], ['TEXTURE', track ? `${track.recipe.texture}%` : null],
+          ['MODÈLE', track?.recipe.modelVariant.toUpperCase()], ['SEED', track?.recipe.seed], ['ÉVOLUTION', track ? evolutionLabel(track.evolution) : null], ['MODE', track ? track.mode === 'independent' ? 'LIBRE' : 'CONTINU' : null],
+        ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value ?? '—'}</dd></div>)}
+      </dl>
+      <div className="machine-track-detail"><span>TAGS</span><p title={track?.recipe.keywords}>{track?.recipe.keywords ?? '—'}</p></div>
+      <div className="machine-track-detail"><span>STRUCT.</span><p>{track ? track.recipe.phases?.join(' › ') || 'AUTO' : '—'}</p></div>
+    </div>
+  </section>
+
 type GenerativeRadioProps = {
+  onBack?: () => void
+  engineMessage?: string | null
+  pairingUrl?: string
   runtimeReady?: boolean | null
   onReconnect?: () => Promise<void>
   availableModels?: readonly StableAudioRadioAdapter[]
@@ -462,6 +484,9 @@ type GenerativeRadioProps = {
 }
 
 export const GenerativeRadio = ({
+  onBack,
+  engineMessage,
+  pairingUrl,
   runtimeReady = true,
   onReconnect,
   availableModels = [],
@@ -475,10 +500,33 @@ export const GenerativeRadio = ({
   onSelectModel,
   selectedModel,
 }: GenerativeRadioProps): ReactElement => {
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const machineRef = useRef<HTMLElement | null>(null)
+  const [machineFit, setMachineFit] = useState({ scale: 1, height: 0 })
+
+  useLayoutEffect(() => {
+    const machine = machineRef.current
+    if (!machine) return
+    const fit = () => {
+      const height = machine.offsetHeight
+      if (!height) return
+      const page = machine.closest('.radio-page')
+      const pageStyle = page ? getComputedStyle(page) : null
+      const inset = pageStyle ? parseFloat(pageStyle.paddingTop) + parseFloat(pageStyle.paddingBottom) : 16
+      const scale = window.innerWidth > 820 ? Math.min(1, Math.max(0.1, (window.innerHeight - inset) / height)) : 1
+      setMachineFit((previous) => Math.abs(previous.scale - scale) < .0001 && previous.height === height ? previous : { scale, height })
+    }
+    fit()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit)
+    observer?.observe(machine)
+    window.addEventListener('resize', fit)
+    return () => { observer?.disconnect(); window.removeEventListener('resize', fit) }
+  }, [])
+
   const [reconnecting, setReconnecting] = useState(false)
-  const [settingsSection, setSettingsSection] = useState<'sound' | 'model'>('sound')
   const [keywords, setKeywords] = useState(initialKeywords)
+  const [selectedTag, setSelectedTag] = useState<string | null>(null)
+  const [selectedExcludedTag, setSelectedExcludedTag] = useState<string | null>(null)
+  const [selectedPhase, setSelectedPhase] = useState<number | null>(null)
   const [phases, setPhases] = useState<string[]>(() => {
     if (initialPhasesProp && initialPhasesProp.length > 0) return [...initialPhasesProp]
     return initialPhases()
@@ -487,12 +535,9 @@ export const GenerativeRadio = ({
     if (initialFixedTagsProp && initialFixedTagsProp.length > 0) return [...initialFixedTagsProp]
     return initialFixedTags()
   })
-  const [draggedFixedTagIndex, setDraggedFixedTagIndex] = useState<number | null>(null)
-  const [isFixedDragOver, setIsFixedDragOver] = useState(false)
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [modalCategory, setModalCategory] = useState<TagCategory | 'all'>('all')
   const [modalSearch, setModalSearch] = useState('')
-  const [draggedPhaseIndex, setDraggedPhaseIndex] = useState<number | null>(null)
   const [sftFile, setSftFile] = useState<File | null>(null)
   const [localModel, setLocalModel] = useState<StableAudioRadioAdapter | null>(selectedModel ?? null)
   const [modelImportState, setModelImportState] = useState<ModelImportState>(selectedModel ? 'ready' : 'idle')
@@ -510,12 +555,16 @@ export const GenerativeRadio = ({
   const [seedInput, setSeedInput] = useState('')
   const [negativePrompt, setNegativePrompt] = useState(initialNegativePrompt)
   const [preampDb, setPreampDb] = useState(defaultRadioDspSettings.preampDb)
+  const [lowGainDb, setLowGainDb] = useState(1.5)
+  const [midGainDb, setMidGainDb] = useState(-0.5)
+  const [highGainDb, setHighGainDb] = useState(2)
+  const [volume, setVolume] = useState(78)
   const [dspEnabled, setDspEnabled] = useState(defaultRadioDspSettings.dspEnabled)
   const [noiseFilter, setNoiseFilter] = useState(defaultRadioDspSettings.noiseFilter)
-  const [dspAmount, setDspAmount] = useState(defaultRadioDspSettings.dspAmount)
   const [limiterEnabled, setLimiterEnabled] = useState(defaultRadioDspSettings.limiterEnabled)
   const [limiterCeilingDb, setLimiterCeilingDb] = useState(defaultRadioDspSettings.limiterCeilingDb)
   const [dspMeter, setDspMeter] = useState(defaultRadioDspMeter)
+  const [eqResponse, setEqResponse] = useState<number[]>([])
   const [activeRecipe, setActiveRecipe] = useState<RadioRecipe | null>(null)
   const [playing, setPlaying] = useState(false)
   const [position, setPosition] = useState(0)
@@ -590,14 +639,6 @@ export const GenerativeRadio = ({
     }
   }, [fixedTags])
 
-  useEffect(() => {
-    if (!tagModalOpen) return
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setTagModalOpen(false)
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [tagModalOpen])
 
   useEffect(() => {
     playbackPositionRef.current = position
@@ -605,6 +646,14 @@ export const GenerativeRadio = ({
 
   const keywordTokens = useMemo(() => parseKeywords(keywords), [keywords])
   const negativePromptTokens = useMemo(() => parseKeywords(negativePrompt), [negativePrompt])
+  const moveFacadeTag = (excluded: boolean, direction: number): void => {
+    const tokens = [...(excluded ? negativePromptTokens : keywordTokens)]
+    const index = tokens.indexOf((excluded ? selectedExcludedTag : selectedTag) ?? '')
+    const destination = index + direction
+    if (index < 0 || destination < 0 || destination >= tokens.length) return
+    ;[tokens[index], tokens[destination]] = [tokens[destination]!, tokens[index]!]
+    ;(excluded ? setNegativePrompt : setKeywords)(tokens.join(', '))
+  }
   const selectedAdapter = selectedModel ?? localModel
   latestGenerationSettingsRef.current = {
     keywords,
@@ -636,10 +685,6 @@ export const GenerativeRadio = ({
   const quantizedModelSelected = modelVariant !== 'fp16'
   const currentTrackDuration = currentTrack?.durationSeconds ?? defaultProgramDurationSeconds
   const progress = currentTrack ? clamp((position / currentTrackDuration) * 100, 0, 100) : 0
-  const remainingSeconds = currentTrack ? Math.max(0, currentTrackDuration - position) : 0
-  const bufferAdvance = currentTrack ? `${formatClock(remainingSeconds)} RESTANT` : '00:00 PRÊT'
-  const continuationBufferState = continuationGenerating ? 'MORCEAU INDÉPENDANT EN CALCUL' : continuationTrack ? 'MORCEAU INDÉPENDANT PRÊT' : currentTrack ? 'PROCHAIN MORCEAU À PRÉPARER' : 'EN ATTENTE'
-  const displayedTags = activeRecipe?.tags ?? keywordTokens
   const activeQueueTrack = currentTrack ?? (generating && activeRecipe
     ? trackFromRecipe(activeRecipe, variationCounterRef.current, 'programme')
     : null)
@@ -650,13 +695,14 @@ export const GenerativeRadio = ({
     : null
   const nextQueueTrack = continuationTrack ?? continuationPreview ?? projectedContinuationTrack
   const radioDspSettings = useMemo<RadioDspSettings>(() => ({
+    lowGainDb, midGainDb, highGainDb, volume,
     preampDb,
     dspEnabled,
     noiseFilter,
-    dspAmount,
+    dspAmount: 0,
     limiterEnabled,
     limiterCeilingDb,
-  }), [dspAmount, dspEnabled, limiterCeilingDb, limiterEnabled, noiseFilter, preampDb])
+  }), [dspEnabled, limiterCeilingDb, limiterEnabled, noiseFilter, preampDb, lowGainDb, midGainDb, highGainDb, volume])
 
   useEffect(() => {
     dspRef.current?.setSettings(radioDspSettings)
@@ -664,7 +710,10 @@ export const GenerativeRadio = ({
 
   useEffect(() => {
     const meterTimer = window.setInterval(() => {
-      if (dspRef.current) setDspMeter(dspRef.current.readMeter())
+      if (dspRef.current) {
+        setDspMeter(dspRef.current.readMeter())
+        setEqResponse(dspRef.current.readFrequencyResponse())
+      }
     }, 140)
     return () => window.clearInterval(meterTimer)
   }, [])
@@ -888,7 +937,7 @@ export const GenerativeRadio = ({
         void prefetchContinuation(sourceTrack, sourceTrack.recipe, session)
       }
     }, 0)
-  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile, phases])
+  }, [keywords, bpm, drift, energy, texture, durationSeconds, loraStrength, evolution, modelVariant, selectedModel?.id, localModel?.id, sftFile, phases, fixedTags, steps, cfg, apg, seedInput, negativePrompt])
 
   function activateContinuation(track: RadioTrack): void {
     if (!track.audioUrl) return
@@ -1042,97 +1091,6 @@ export const GenerativeRadio = ({
     setKeywords(updated)
   }
 
-  const handleKeywordChipDragStart = (event: React.DragEvent<HTMLElement>, token: string): void => {
-    event.dataTransfer.effectAllowed = 'copyMove'
-    event.dataTransfer.setData('text/tag', token)
-    event.dataTransfer.setData('text/plain', token)
-  }
-
-  const handleFixedTagDragStart = (event: React.DragEvent<HTMLElement>, index: number, tag: string): void => {
-    setDraggedFixedTagIndex(index)
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/fixed-tag-index', String(index))
-    event.dataTransfer.setData('text/tag', tag)
-    event.dataTransfer.setData('text/plain', tag)
-  }
-
-  const handleFixedTagDragOver = (event: React.DragEvent<HTMLElement>): void => {
-    event.preventDefault()
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
-    setIsFixedDragOver(true)
-  }
-
-  const handleFixedTagDragLeave = (event: React.DragEvent<HTMLElement>): void => {
-    if (event.currentTarget.contains(event.relatedTarget as Node)) return
-    setIsFixedDragOver(false)
-  }
-
-  const handleFixedTagDrop = (event: React.DragEvent<HTMLElement>, targetIndex?: number): void => {
-    event.preventDefault()
-    event.stopPropagation()
-    setIsFixedDragOver(false)
-
-    if (!event.dataTransfer) {
-      setDraggedFixedTagIndex(null)
-      return
-    }
-
-    const fixedIndexStr = event.dataTransfer.getData('text/fixed-tag-index')
-    if (fixedIndexStr !== '') {
-      const fromIndex = parseInt(fixedIndexStr, 10)
-      if (!Number.isNaN(fromIndex)) {
-        if (targetIndex !== undefined && fromIndex !== targetIndex) {
-          setFixedTags((prev) => {
-            const updated = [...prev]
-            const [moved] = updated.splice(fromIndex, 1)
-            if (moved) {
-              updated.splice(targetIndex, 0, moved)
-            }
-            return updated
-          })
-        }
-        setDraggedFixedTagIndex(null)
-        return
-      }
-    }
-
-    const tagData = event.dataTransfer.getData('text/tag') || event.dataTransfer.getData('text/plain')
-    if (!tagData) {
-      setDraggedFixedTagIndex(null)
-      return
-    }
-    const newTag = tagData.trim()
-    if (!newTag) {
-      setDraggedFixedTagIndex(null)
-      return
-    }
-
-    setFixedTags((prev) => {
-      const exists = prev.some((t) => t.toLowerCase() === newTag.toLowerCase())
-      if (exists) return prev
-      if (targetIndex !== undefined) {
-        const next = [...prev]
-        next.splice(targetIndex, 0, newTag)
-        return next
-      }
-      return [...prev, newTag]
-    })
-    setDraggedFixedTagIndex(null)
-  }
-
-  const handleFixedTagDragEnd = (): void => {
-    setDraggedFixedTagIndex(null)
-    setIsFixedDragOver(false)
-  }
-
-  const handleRemoveFixedTag = (indexToRemove: number): void => {
-    setFixedTags((prev) => prev.filter((_, idx) => idx !== indexToRemove))
-  }
-
-  const handleClearFixedTags = (): void => {
-    setFixedTags([])
-  }
-
   const handleToggleFixedTag = (tagLabel: string): void => {
     setFixedTags((prev) => {
       const exists = prev.some((t) => t.toLowerCase() === tagLabel.toLowerCase())
@@ -1153,73 +1111,12 @@ export const GenerativeRadio = ({
     }
   }
 
-  const handleRemoveNegativeKeyword = (keywordToRemove: string): void => {
-    const updated = parseKeywords(negativePrompt)
-      .filter((token) => token.toLowerCase() !== keywordToRemove.toLowerCase())
-      .join(', ')
-    setNegativePrompt(updated)
-  }
-
   const handleAddPhase = (phaseLabel: string): void => {
     setPhases((prev) => [...prev, phaseLabel])
   }
 
   const handleRemovePhase = (indexToRemove: number): void => {
     setPhases((prev) => prev.filter((_, idx) => idx !== indexToRemove))
-  }
-
-  const handleResetPhases = (): void => {
-    setPhases([...DEFAULT_PHASE_SEQUENCE])
-  }
-
-  const handleClearPhases = (): void => {
-    setPhases([])
-  }
-
-  const handlePhaseDragStart = (event: React.DragEvent<HTMLDivElement>, index: number): void => {
-    setDraggedPhaseIndex(index)
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', String(index))
-  }
-
-  const handlePhaseDragOver = (event: React.DragEvent<HTMLDivElement>): void => {
-    event.preventDefault()
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-  }
-
-  const handlePhaseDrop = (event: React.DragEvent<HTMLDivElement>, targetIndex: number): void => {
-    event.preventDefault()
-    if (!event.dataTransfer) {
-      setDraggedPhaseIndex(null)
-      return
-    }
-    const palettePhase = event.dataTransfer.getData('text/phase-palette')
-    if (palettePhase) {
-      setPhases((prev) => {
-        const next = [...prev]
-        next.splice(targetIndex, 0, palettePhase)
-        return next
-      })
-      setDraggedPhaseIndex(null)
-      return
-    }
-    if (draggedPhaseIndex === null || draggedPhaseIndex === targetIndex) {
-      setDraggedPhaseIndex(null)
-      return
-    }
-    setPhases((prev) => {
-      const updated = [...prev]
-      const [moved] = updated.splice(draggedPhaseIndex, 1)
-      if (moved) {
-        updated.splice(targetIndex, 0, moved)
-      }
-      return updated
-    })
-    setDraggedPhaseIndex(null)
-  }
-
-  const handlePhaseDragEnd = (): void => {
-    setDraggedPhaseIndex(null)
   }
 
   const filteredTags = useMemo(() => {
@@ -1241,425 +1138,161 @@ export const GenerativeRadio = ({
 
   const needsModel = !selectedModelVariant?.available || (modelVariant === 'fp16' && !selectedAdapter && !sftFile)
   const setupNeeded = runtimeReady !== true || needsModel
-  const openSettings = (section: 'sound' | 'model') => { setSettingsSection(section); setSettingsOpen(true) }
   const startListening = () => {
     if (!keywords.trim() && fixedTags.length === 0) { void generateNext(); return }
-    if (setupNeeded) { openSettings('model'); return }
+    if (setupNeeded) { setError(runtimeReady !== true ? engineMessage || 'Connecte le moteur local avec ENGINE.' : 'Choisis une variante installée ou importe ton modèle.'); document.getElementById('machine-model-variant')?.focus(); return }
     void generateNext(true)
   }
   const reconnect = async () => {
     if (!onReconnect || reconnecting) return
     setReconnecting(true)
-    try { await onReconnect() } finally { setReconnecting(false) }
+    setError(null)
+    try { await onReconnect() } catch { setError('Connexion impossible. Vérifie que ton moteur local est démarré, puis réessaie.') } finally { setReconnecting(false) }
   }
 
-  return <section className={`radio-widget ${playing ? 'is-playing' : ''}`} aria-labelledby="radio-widget-heading" data-testid="generative-radio">
-    <div className="radio-session-toolbar">
-      <span className="radio-session-kind">Radio générative</span>
-      <button className="radio-settings-trigger" type="button" onClick={() => openSettings('sound')}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14M7 3v4M13 8v4M8 13v4" /></svg>Réglages</button>
-    </div>
-    <div className="radio-listening-title">
-      <h1 id="radio-widget-heading">{currentTrack?.title ?? 'À ton rythme.'}</h1>
-      <p>{generating ? 'Ton premier morceau prend forme.' : currentTrack ? (playing ? 'La suite se compose pendant que tu écoutes.' : 'Reprends là où tu en étais.') : 'Quelques mots. Une radio qui ne s’arrête pas.'}</p>
-    </div>
-    <form className="radio-listening-form" noValidate onSubmit={(event) => { event.preventDefault(); startListening() }} data-testid="radio-form">
-        <div className="radio-keyword-field">
-          <div className="radio-keyword-field-head">
-            <label htmlFor="radio-keywords">Ta direction sonore</label>
-            <div className="radio-keyword-head-actions">
-              <button
-                type="button"
-                className="radio-catalog-btn"
-                onClick={() => setTagModalOpen(true)}
-              >
-                Explorer les sons
-              </button>
-              {keywords !== defaultKeywords ? (
-                <button
-                  type="button"
-                  className="radio-keyword-reset-btn"
-                  onClick={() => setKeywords(defaultKeywords)}
-                >
-                  Réinitialiser
-                </button>
-              ) : null}
-            </div>
+  return <div className="machine-fit" style={{ height: machineFit.height ? machineFit.height * machineFit.scale : undefined }}><section ref={machineRef} style={{ transform: `scale(${machineFit.scale})` }} className={`radio-widget machine ${playing ? 'is-playing' : ''}`} aria-labelledby="radio-widget-heading" data-testid="generative-radio">
+    <header className="machine-toprail">
+      <div className="machine-brand"><svg aria-hidden="true" viewBox="0 0 54 48"><path d="M2 27h6l5-13 6 26 7-36 7 39 6-26 5 17 4-7h4" /></svg><h1 id="radio-widget-heading">radio.studio</h1><small>GENERATIVE MUSIC WORKSTATION</small></div>
+      <div className="machine-model-screen machine-screen"><select id="machine-model-variant" aria-label="Variante du modèle" value={modelVariant} onChange={selectModelVariant}>{modelVariantOptions.map((variant) => <option key={variant.id} value={variant.id} disabled={!variant.available}>{variant.label}{variant.available ? '' : ' · indisponible'}</option>)}</select><select aria-label="Modèles installés" value={selectedAdapter?.id ?? ''} disabled={quantizedModelSelected} onChange={selectInstalledModel}><option value="">{quantizedModelSelected ? 'BERLIN · FUSIONNÉ' : 'CHOISIR UN MODÈLE'}</option>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.filename}</option>)}</select>{pairingUrl ? <a href={pairingUrl}>APPAIRER LE MOTEUR ↗</a> : <span>{reconnecting ? 'CONNEXION…' : runtimeReady === false ? 'ENGINE OFFLINE' : runtimeReady === null ? 'SCANNING ENGINE' : needsModel ? 'MODEL REQUIRED' : 'LOCAL READY'}</span>}</div>
+      <div className="machine-top-actions">
+        {onBack && <MachineKey className="machine-key is-small" type="button" onClick={onBack} aria-label="Retourner au player">←</MachineKey>}
+        {onReconnect && <MachineKey className="machine-key is-small" type="button" onClick={() => void reconnect()} disabled={reconnecting}>{reconnecting ? 'SCAN…' : 'ENGINE'}</MachineKey>}
+        <label className="machine-key is-small machine-import">IMPORT<input type="file" accept=".safetensors" aria-label="Charger un modèle Stable Audio 3" onChange={(event) => void handleSftFile(event)} disabled={modelImportState === 'uploading'} /></label>
+        {(selectedAdapter || sftFile) && <MachineKey type="button" className="machine-key is-small" onClick={resetModel} aria-label="Retirer le modèle sélectionné">×</MachineKey>}
+      </div>
+    </header>
+
+    <form className="machine-console" noValidate onSubmit={(event) => { event.preventDefault(); startListening() }} data-testid="radio-form">
+      <div className="machine-left-stack">
+        <section className="machine-panel machine-direction">
+        <h2 className="machine-silkscreen">DIRECTION <button type="button" onClick={() => setTagModalOpen(true)} aria-label="Explorer les sons">SONS +</button></h2>
+        <div className="machine-tag-display-row">
+          <div className="machine-screen machine-prompt-screen">
+            <textarea ref={keywordsRef} id="radio-keywords" rows={1} wrap="soft" value={keywords} onChange={(event) => { setKeywords(event.currentTarget.value); if (error) setError(null) }} placeholder="minimal techno, warm textures, deep bass" aria-label="Ta direction sonore" aria-describedby={error?.startsWith('Ajoute au moins') ? 'radio-error' : undefined} aria-invalid={Boolean(error?.startsWith('Ajoute au moins'))} />
+            <div className="machine-chip-line">{Array.from(new Set([...keywordTokens, ...fixedTags])).map((tag) => <button type="button" key={tag} aria-pressed={selectedTag === tag} onClick={() => setSelectedTag(tag)}>{fixedTags.includes(tag) ? '◆ ' : ''}{tag}</button>)}</div>
           </div>
-          <small>Des styles, des instruments, une ambiance. Sépare tes idées par des virgules.</small>
-          <textarea className="radio-keyword-textarea resize-none" ref={keywordsRef} id="radio-keywords" rows={2} value={keywords} onChange={(event) => { setKeywords(event.currentTarget.value); if (error) setError(null) }} placeholder="ambient pads, broken beat…" aria-describedby={error ? 'radio-error' : undefined} aria-invalid={Boolean(error)} />
+          <div className="machine-tag-encoder"><MachineKnob id="direction-select" label="Sélection du tag" value={Math.max(0, keywordTokens.indexOf(selectedTag ?? ''))} min={0} max={Math.max(1, keywordTokens.length - 1)} display="" disabled={!keywordTokens.length} onChange={(index) => setSelectedTag(keywordTokens[index] ?? null)} /></div>
         </div>
-      <div className="radio-dial" aria-busy={generating}>
-        <svg viewBox="0 0 200 200" className="radio-dial-ring" aria-hidden="true">
-          <circle cx="100" cy="100" r="94" className="radio-dial-track" />
-          <circle cx="100" cy="100" r="94" className="radio-dial-progress" pathLength="100" strokeDasharray={`${generating ? generationProgress : progress} 100`} />
-        </svg>
-        <button type="button" className="radio-main-play" disabled={generating || modelImportState === 'uploading'} onClick={() => currentTrack ? void togglePlayback() : startListening()} aria-label={generating ? `Composition en cours : ${generationProgress}%` : currentTrack ? (playing ? 'Mettre la radio en pause' : 'Lancer la radio') : setupNeeded ? 'Configurer la radio' : 'Démarrer la radio'}>
-          {generating ? <span className="radio-generation-percent">{generationProgress}<small>%</small></span> : <svg viewBox="0 0 32 32" aria-hidden="true">{playing ? <path d="M10 8v16M22 8v16" className="radio-pause-symbol" /> : <path d="M11 6L26 16 11 26Z" />}</svg>}
-        </button>
+        <div className="machine-tag-actions">
+          <MachineKey type="button" className="machine-key" onClick={() => keywordsRef.current?.focus()}>ADD</MachineKey>
+          <MachineKey type="button" className="machine-key" disabled={!selectedTag} onClick={() => { if (selectedTag) { handleRemoveKeyword(selectedTag); setFixedTags((tags) => tags.filter((tag) => tag !== selectedTag)) } setSelectedTag(null) }}>REMOVE</MachineKey>
+          <MachineKey type="button" className="machine-key" disabled={!selectedTag} onClick={() => moveFacadeTag(false, -1)}>LEFT</MachineKey>
+          <MachineKey type="button" className="machine-key" disabled={!selectedTag} onClick={() => moveFacadeTag(false, 1)}>RIGHT</MachineKey>
+          <MachineKey type="button" className="machine-key" disabled={!selectedTag} aria-pressed={!!selectedTag && fixedTags.includes(selectedTag)} onClick={() => { if (selectedTag) handleToggleFixedTag(selectedTag) }}>PIN</MachineKey>
+        </div>
+      </section>
+        <section className="machine-panel machine-exclude">
+        <h2 className="machine-silkscreen">EXCLUDE <span className="machine-screen machine-count">{negativePromptTokens.length} TAGS</span></h2>
+        <div className="machine-tag-display-row">
+          <div className="machine-screen machine-negative-screen">
+            <textarea id="radio-negative-prompt-face" rows={1} wrap="soft" value={negativePrompt} onChange={(event) => setNegativePrompt(event.currentTarget.value)} aria-label="Exclusions sonores" />
+            <div className="machine-chip-line">{negativePromptTokens.map((tag) => <button type="button" key={tag} aria-pressed={selectedExcludedTag === tag} onClick={() => setSelectedExcludedTag(tag)}>{tag}</button>)}</div>
+          </div>
+          <div className="machine-tag-encoder"><MachineKnob id="exclude-select" label="Sélection du tag négatif" value={Math.max(0, negativePromptTokens.indexOf(selectedExcludedTag ?? ''))} min={0} max={Math.max(1, negativePromptTokens.length - 1)} display="" disabled={!negativePromptTokens.length} onChange={(index) => setSelectedExcludedTag(negativePromptTokens[index] ?? null)} /></div>
+        </div>
+        <div className="machine-tag-actions">
+          <MachineKey type="button" className="machine-key" onClick={() => document.getElementById('radio-negative-prompt-face')?.focus()}>ADD</MachineKey>
+          <MachineKey type="button" className="machine-key" disabled={!selectedExcludedTag} onClick={() => { setNegativePrompt(negativePromptTokens.filter((tag) => tag !== selectedExcludedTag).join(', ')); setSelectedExcludedTag(null) }}>REMOVE</MachineKey>
+          <MachineKey type="button" className="machine-key" disabled={!selectedExcludedTag} onClick={() => moveFacadeTag(true, -1)}>LEFT</MachineKey>
+          <MachineKey type="button" className="machine-key" disabled={!selectedExcludedTag} onClick={() => moveFacadeTag(true, 1)}>RIGHT</MachineKey>
+        </div>
+      </section>
+        <TrackReadout track={activeQueueTrack} status={generating ? `CALCUL ${generationProgress}%` : playing ? 'PLAY' : currentTrack ? 'PAUSE' : 'STANDBY'} progress={generating ? generationProgress : progress} position={position} />
+        <section className="machine-panel machine-evolution" aria-label="Évolution">
+        <h2 className="machine-silkscreen">ÉVOLUTION</h2>
+        <div>{(['slow', 'fluid', 'wild'] as RadioEvolution[]).map((mode) => <MachineKey type="button" key={mode} className={`machine-key ${evolution === mode ? 'is-selected' : ''}`} aria-pressed={evolution === mode} onClick={() => setEvolution(mode)}>{evolutionLabel(mode)}</MachineKey>)}</div>
+      </section>
       </div>
-      <div className="radio-play-caption">{generating ? 'Composition en cours' : currentTrack ? (playing ? 'À l’écoute' : 'En pause') : setupNeeded ? 'Configurer puis écouter' : 'Lancer ma radio'}</div>
-      {currentTrack && <div className="radio-listening-timeline"><span>{formatClock(position)}</span><input type="range" min="0" max={currentTrackDuration} step="0.1" value={Math.min(position, currentTrackDuration)} onChange={handleSeek} aria-label="Position dans le programme" /><span>{formatClock(currentTrackDuration)}</span></div>}
-      <div className="radio-essential-controls">
-          <label className="radio-slider-field" htmlFor="radio-bpm"><span>Tempo <b>{bpm} BPM</b></span><input id="radio-bpm" type="range" min="60" max="220" step="1" value={bpm} style={percentStyle((bpm - 60) / 160 * 100)} onChange={(event) => setBpm(event.currentTarget.valueAsNumber)} /></label>
-          <label className="radio-slider-field" htmlFor="radio-energy"><span>Énergie <b>{energy}%</b></span><input id="radio-energy" type="range" min="0" max="100" step="1" value={energy} style={percentStyle(energy)} onChange={(event) => setEnergy(event.currentTarget.valueAsNumber)} /></label>
+
+      <section className="machine-panel machine-structure-panel" aria-label="Structure du morceau">
+        <h2 className="machine-silkscreen">STRUCTURE <span className="machine-arrangement-actions">
+          <select aria-label="Ajouter une phase" value="" onChange={(event) => { if (event.currentTarget.value) { handleAddPhase(event.currentTarget.value); setSelectedPhase(phases.length) } }}><option value="">＋ PHASE</option>{TRACK_PHASES.map((phase) => <option key={phase.id} value={phase.label}>{phase.label}</option>)}</select>
+          {[-1, 1].map((direction) => <MachineKey key={direction} type="button" className="machine-key" aria-label={direction < 0 ? 'Déplacer la phase à gauche' : 'Déplacer la phase à droite'} disabled={selectedPhase === null || selectedPhase + direction < 0 || selectedPhase + direction >= phases.length} onClick={() => { if (selectedPhase === null) return; const next = [...phases]; const target = selectedPhase + direction; [next[selectedPhase], next[target]] = [next[target]!, next[selectedPhase]!]; setPhases(next); setSelectedPhase(target) }}>{direction < 0 ? '←' : '→'}</MachineKey>)}
+          <MachineKey type="button" className="machine-key" disabled={selectedPhase === null} onClick={() => { if (selectedPhase !== null) handleRemovePhase(selectedPhase); setSelectedPhase(null) }} aria-label="Retirer la phase sélectionnée">−</MachineKey>
+        </span></h2>
+        <div className="machine-phase-keys">{(phases.length ? phases : ['Intro', 'Build', 'Drop', 'Groove', 'Breakdown', 'Outro']).map((phase, index) => <button type="button" key={`${phase}-${index}`} className={`machine-phase ${phases.length ? '' : 'is-ghost'}`} aria-pressed={phases.length > 0 && selectedPhase === index} aria-label={phases.length ? `Sélectionner ${phase}, position ${index + 1}` : `Insérer ${phase}`} onClick={() => { if (phases.length) setSelectedPhase(index); else { handleAddPhase(phase); setSelectedPhase(0) } }}><span className="machine-pad-art" aria-hidden="true"><i className="machine-pad-frame" /><i className="machine-pad-cap" /></span><span className="machine-phase-label">{phase}</span></button>)}</div>
+      </section>
+
+      <section className="machine-panel machine-macros" aria-label="Macros">
+        <h2 className="machine-silkscreen">MACROS</h2>
+        <div className="machine-knob-bank">
+          <MachineKnob id="radio-bpm" label="Tempo" value={bpm} min={60} max={220} display={`${bpm} BPM`} onChange={setBpm} accent="orange" />
+          <MachineKnob id="radio-energy" label="Energy" value={energy} min={0} max={100} display={`${energy} %`} onChange={setEnergy} />
+          <MachineKnob id="radio-texture" label="Texture" value={texture} min={0} max={100} display={`${texture} %`} onChange={setTexture} accent="pink" />
+          <MachineKnob id="radio-drift" label="Drift" value={drift} min={0} max={100} display={`${drift} %`} onChange={setDrift} accent="cyan" />
+          <MachineKnob id="radio-duration" label="Durée" value={durationSeconds} min={minimumRadioProgramSeconds} max={maximumRadioProgramSeconds} step={5} display={formatClock(durationSeconds)} onChange={setDurationSeconds} accent="red" />
+          <MachineKnob id="radio-lora" label="Influence" value={quantizedModelSelected ? 25 : loraStrength} min={0} max={100} display={quantizedModelSelected ? '25 % FIXE' : `${loraStrength} %`} disabled={quantizedModelSelected} onChange={setLoraStrength} />
+        </div>
+      </section>
+
+      <section className="machine-panel machine-equalizer" aria-label="Égaliseur">
+        <h2 className="machine-silkscreen">EQUALIZER <span>SORTIE</span></h2>
+        <div className="machine-eq-top">
+          <div className="machine-screen machine-eq-screen">
+            <div className="machine-screen-head"><span>EQ · 3 BANDES</span><b>{dspEnabled ? 'ACTIVE' : 'BYPASS'}</b></div>
+            <svg viewBox="0 0 420 170" preserveAspectRatio="none" role="img" aria-label="Réponse des filtres audio">
+              <defs><pattern id="eq-grid-pattern" x="34" y="12" width="24" height="28" patternUnits="userSpaceOnUse"><path d="M24 0H0V28" className="eq-grid" fill="none" /></pattern></defs>
+              <rect x="34" y="12" width="372" height="140" fill="url(#eq-grid-pattern)" className="eq-plot-border" />
+              {[12, 6, 0, -6, -12].map((value, index) => <text key={value} x="27" y={19 + index * 31} textAnchor="end" className="eq-axis">{value > 0 ? '+' : ''}{value}</text>)}
+              {['20', '100', '1k', '10k', '20k Hz'].map((value, index) => <text key={value} x={34 + index * 93} y="167" textAnchor={index === 4 ? 'end' : index === 0 ? 'start' : 'middle'} className="eq-axis">{value}</text>)}
+              <path className="eq-zero" d="M34 82H406" />
+              {eqResponse.length > 0 ? <path className="eq-curve" d={eqResponse.map((db, index) => `${index ? 'L' : 'M'}${34 + index / (eqResponse.length - 1) * 372},${82 - clamp(db, -14, 14) * 5}`).join(' ')} /> : <text x="220" y="69" textAnchor="middle" className="eq-wait">EN ATTENTE AUDIO</text>}
+            </svg>
+          </div>
+          <div className="machine-stereo-meter" aria-label="Niveaux de sortie stéréo">
+            {[{ label: 'L', peak: dspMeter.leftPeakDb ?? -60 }, { label: 'R', peak: dspMeter.rightPeakDb ?? -60 }].map((channel) => <div key={channel.label} className="machine-meter-channel"><div role="meter" aria-label={`Sortie ${channel.label}`} aria-valuemin={-60} aria-valuemax={0} aria-valuenow={clamp(channel.peak, -60, 0)}>{Array.from({ length: 16 }, (_, index) => <i key={index} className={`${channel.peak > -60 + index * 3.75 ? 'is-lit' : ''} ${index > 13 ? 'is-red' : index > 10 ? 'is-amber' : ''}`} />)}</div><span>{channel.label}</span></div>)}
+            <div className="machine-meter-scale"><span>0</span><span>−6</span><span>−12</span><span>−24</span><span>−48</span></div>
+          </div>
+        </div>
+        <div className="machine-eq-controls">
+          <MachineKnob id="machine-low" label="LOW" value={lowGainDb} min={-12} max={12} step={.5} display={`${lowGainDb > 0 ? '+' : ''}${lowGainDb.toFixed(1)} dB`} onChange={setLowGainDb} accent="orange" />
+          <MachineKnob id="machine-mid" label="MID" value={midGainDb} min={-12} max={12} step={.5} display={`${midGainDb > 0 ? '+' : ''}${midGainDb.toFixed(1)} dB`} onChange={setMidGainDb} />
+          <MachineKnob id="machine-high" label="HIGH" value={highGainDb} min={-12} max={12} step={.5} display={`${highGainDb > 0 ? '+' : ''}${highGainDb.toFixed(1)} dB`} onChange={setHighGainDb} accent="cyan" />
+          <MachineKnob id="machine-preamp" label="PREAMP" value={preampDb} min={-12} max={12} step={.5} display={`${preampDb.toFixed(1)} dB`} onChange={setPreampDb} accent="pink" />
+          <MachineKnob id="machine-volume" label="VOLUME" value={volume} min={0} max={100} display={`${volume} %`} onChange={setVolume} accent="orange" />
+        </div>
+        <div className="machine-dsp-strip">
+          <button type="button" className={`machine-switch ${dspEnabled ? 'is-on' : ''}`} aria-pressed={dspEnabled} onClick={() => setDspEnabled(!dspEnabled)}><span>DSP</span><i aria-hidden="true" /><b className="machine-screen">{dspEnabled ? 'ON' : 'OFF'}</b></button>
+          <MachineKnob id="machine-filter" label="FILTER" value={noiseFilter} min={0} max={100} display={`${noiseFilter} %`} onChange={setNoiseFilter} />
+          <button type="button" className={`machine-switch ${limiterEnabled ? 'is-on' : ''}`} aria-pressed={limiterEnabled} onClick={() => setLimiterEnabled(!limiterEnabled)}><span>LIMITER</span><i aria-hidden="true" /><b className="machine-screen">{limiterEnabled ? 'ON' : 'OFF'}</b></button>
+          <MachineKnob id="machine-ceiling" label="PLAFOND" value={limiterCeilingDb} min={-6} max={-.3} step={.1} display={`${limiterCeilingDb.toFixed(1)} dB`} onChange={setLimiterCeilingDb} />
+        </div>
+      </section>
+
+      <section className="machine-panel machine-generation" aria-label="Génération">
+        <h2 className="machine-silkscreen">GÉNÉRATION</h2>
+        <div>
+          <MachineKnob id="machine-steps" label="STEPS" value={steps} min={1} max={24} display={String(steps)} onChange={setSteps} />
+          <MachineKnob id="machine-cfg" label="CFG" value={cfg} min={0} max={5} step={.1} display={cfg.toFixed(1)} onChange={setCfg} />
+          <MachineKnob id="machine-apg" label="APG" value={apg} min={0} max={1} step={.05} display={apg.toFixed(2)} onChange={setApg} />
+          <label className="machine-seed">SEED<input className="machine-screen" type="number" min="0" max="2147483647" placeholder="AUTO" value={seedInput} onChange={(event) => setSeedInput(event.currentTarget.value)} /></label>
+        </div>
+        <MachineKey type="button" className="machine-key machine-new-direction" disabled={generating || continuationGenerating} onClick={() => void generateNext(true)} aria-label="Repartir de cette direction ↗">NOUVELLE DIRECTION ↗</MachineKey>
+      </section>
+
+      <TrackReadout next track={nextQueueTrack} status={continuationTrack ? 'READY' : continuationGenerating ? `CALCUL ${generationProgress}%` : 'À PRÉPARER'} progress={continuationTrack ? 100 : continuationGenerating ? generationProgress : 0} />
+
+      <section className="machine-panel machine-transport" aria-label="Transport">
+        <h2 className="machine-silkscreen">TRANSPORT</h2>
+        <div className="machine-transport-row">
+          <MachineKey type="button" className="machine-key is-square" disabled={!currentTrack} onClick={() => { if (audioRef.current) { audioRef.current.currentTime = 0; setPosition(0) } }} aria-label="Revenir au début">⏮</MachineKey>
+          <MachineKey type="button" className={`machine-key is-square is-play ${playing ? 'is-active' : ''}`} disabled={playing || generating || modelImportState === 'uploading'} onClick={() => currentTrack ? void togglePlayback() : startListening()} aria-label={currentTrack ? 'Lancer la radio' : setupNeeded ? 'Configurer la radio' : 'Démarrer la radio'}>▶</MachineKey>
+          <MachineKey type="button" className={`machine-key is-square is-pause ${currentTrack && !playing ? 'is-active' : ''}`} disabled={!playing} onClick={() => audioRef.current?.pause()} aria-label="Mettre la radio en pause">Ⅱ</MachineKey>
+          <MachineKey type="button" className="machine-key is-square" disabled={!continuationTrack} onClick={() => { if (continuationTrack) activateContinuation(continuationTrack) }} aria-label="Lire le morceau suivant">⏭</MachineKey>
+          <MachineKey type="button" className="machine-key is-square" disabled={!currentTrack} onClick={() => { if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; setPosition(0) } }} aria-label="Arrêter">■</MachineKey>
+        </div>
+      </section>
+
+      <div className="machine-panel machine-timeline">
+        <div className="machine-screen"><span>{formatClock(position)} / {currentTrack ? formatClock(currentTrackDuration) : '--:--'}</span><span>{currentTrack ? `−${formatClock(Math.max(0, currentTrackDuration - position))}` : 'STANDBY'}</span></div>
+        <div className="machine-fader-track"><input type="range" disabled={!currentTrack} min="0" max={currentTrackDuration} step="0.1" value={Math.min(position, currentTrackDuration)} onChange={handleSeek} aria-label="Position dans le programme" /></div>
       </div>
-      {currentTrack && <button className="radio-new-direction" type="button" disabled={generating || continuationGenerating} onClick={() => void generateNext(true)}>Repartir de cette direction ↗</button>}
-      {error && <p className="radio-error" id="radio-error" role="alert">{error}</p>}
-      <p className="radio-status" role="status" aria-live="polite">{error ? '' : generating || currentTrack ? status : runtimeReady === false ? 'Moteur hors ligne. Tu peux déjà préparer ta radio.' : runtimeReady === null ? 'Recherche du moteur local…' : needsModel ? 'Choisis ton modèle pour la première écoute.' : 'Tout est prêt. À toi de lancer.'}</p>
+      <div className="machine-panel machine-generate-panel"><MachineKey type="submit" className="machine-key machine-generate" disabled={generating || continuationGenerating}><span aria-hidden="true">✦</span> GÉNÉRER {currentTrack ? 'LA SUITE' : 'LE MORCEAU'}</MachineKey></div>
+      <div className="machine-status machine-screen" role="status" aria-live="polite">{error ? <span id="radio-error" role="alert">{error}</span> : engineMessage && runtimeReady !== true ? engineMessage : status}</div>
     </form>
-        <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="auto" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); void dspRef.current?.resume() }} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError('Le WAV généré ne peut pas être décodé par le navigateur.'); setStatus('Lecture impossible · le moteur prépare un WAV compatible navigateur.') }} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={() => { if (audioRef.current?.duration && Number.isFinite(audioRef.current.duration)) setPosition(Math.min(audioRef.current.currentTime, audioRef.current.duration)) }} onEnded={handleAudioEnded} />
-    <div className="radio-listening-footer"><span>Ton son reste sur ta machine.</span><button type="button" className="radio-engine-trigger" onClick={() => openSettings('model')}><i className={runtimeReady && !needsModel ? 'is-ready' : ''} aria-hidden="true" />{runtimeReady === false ? 'Moteur hors ligne' : needsModel ? 'Choisir un modèle' : modelVariant.toUpperCase() + ' · Modèle prêt'} ↗</button></div>
-
-    <RadioDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Réglages">
-      <div className="radio-settings-nav" role="group" aria-label="Catégorie des réglages">
-        <button type="button" aria-pressed={settingsSection === 'sound'} onClick={() => setSettingsSection('sound')}>Le son</button>
-        <button type="button" aria-pressed={settingsSection === 'model'} onClick={() => setSettingsSection('model')}>Le moteur</button>
-      </div>
-      <div className="radio-settings-content" hidden={settingsSection !== 'model'}>
-        <div className="radio-setup-copy"><h3>{runtimeReady === false ? 'Connecte ton moteur local.' : 'Choisis ton modèle.'}</h3><p>{runtimeReady === false ? 'Démarre le service Stable Audio 3 sur ta machine, puis réessaie la connexion.' : 'Un modèle installé suffit. Ce choix sera conservé pour ta prochaine visite.'}</p>
-          {onReconnect && <button type="button" className="radio-reconnect" disabled={reconnecting} onClick={() => void reconnect()}>{reconnecting ? 'Connexion…' : 'Vérifier la connexion'}</button>}
-          <p className="radio-connection-feedback" aria-live="polite">{runtimeReady === false ? 'Connexion indisponible' : runtimeReady === null ? 'Vérification en cours…' : 'Moteur connecté'}</p>
-        </div>
-        <div className={`radio-sft-details ${selectedAdapter || quantizedModelSelected ? 'is-ready' : ''}`} aria-live="polite">
-          <strong>{quantizedModelSelected ? selectedModelVariant?.label : selectedAdapter?.filename ?? sftFile?.name ?? 'Aucun modèle chargé'}</strong>
-          <small>{quantizedModelSelected ? `${selectedModelVariant?.size_bytes ? formatBytes(selectedModelVariant.size_bytes) : 'poids locaux'} · modèle Berlin fusionné · influence 25% fixe` : selectedAdapter ? `${formatBytes(selectedAdapter.size_bytes)} · modèle local prêt` : sftFile ? `${formatBytes(sftFile.size)} · en attente du moteur local` : 'Fichier .safetensors Stable Audio 3 requis'}</small>
-        </div>
-        {modelOptions.length > 0 && <label className="radio-model-select" htmlFor="radio-installed-model"><span>Modèles installés</span><select id="radio-installed-model" value={selectedAdapter?.id ?? ''} onChange={selectInstalledModel}><option value="">Choisir un modèle…</option>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.filename}</option>)}</select></label>}
-        <label className="radio-model-select" htmlFor="radio-model-variant"><span>Variante du modèle</span><select id="radio-model-variant" value={modelVariant} onChange={selectModelVariant}>{modelVariantOptions.map((variant) => <option key={variant.id} value={variant.id} disabled={!variant.available}>{variant.label}{variant.available ? '' : ' · non installée'}</option>)}</select><small>{selectedModelVariant?.description ?? 'Choisis une précision Stable Audio 3.'}</small></label>
-        <a className="radio-model-help" href="https://huggingface.co/stabilityai/stable-audio-3-medium" target="_blank" rel="noreferrer">Looking for a model? <span>Stable Audio 3 Medium on Hugging Face ↗</span></a>
-        {(selectedAdapter || sftFile) && <button className="radio-model-reset" type="button" onClick={resetModel}>Retirer le modèle sélectionné</button>}
-
-          <label className={`radio-model-upload ${modelImportState === 'uploading' ? 'is-uploading' : ''}`}>
-            <input className="radio-file-input" type="file" accept=".safetensors,application/octet-stream" onChange={(event) => void handleSftFile(event)} aria-label="Charger un modèle Stable Audio 3" disabled={modelImportState === 'uploading'} />
-            <span>{modelImportState === 'uploading' ? 'IMPORT EN COURS…' : '＋ IMPORTER UN MODÈLE'}</span>
-          </label>
-        <p className="radio-upload-help">Fichier .safetensors · 2 Go maximum</p>
-        <details className="radio-model-options-panel" data-testid="radio-model-options-panel">
-          <summary className="radio-model-options-summary">
-            <span><strong>Réglages de génération</strong><small>Steps, CFG, APG, seed & prompt négatif</small></span>
-            <span className="radio-model-options-badge">AVANCÉ</span>
-          </summary>
-          <div className="radio-dsp-control-grid" style={{ paddingTop: '8px' }}>
-            <label className="radio-slider-field" htmlFor="radio-steps"><span>Steps d’échantillonnage <b>{steps} steps</b></span><input id="radio-steps" type="range" min="1" max="24" step="1" value={steps} style={percentStyle((steps - 1) / 23 * 100)} onChange={(event) => setSteps(event.currentTarget.valueAsNumber)} /></label>
-            <label className="radio-slider-field" htmlFor="radio-cfg"><span>Guidance CFG <b>{cfg.toFixed(1)}</b></span><input id="radio-cfg" type="range" min="0" max="5" step="0.1" value={cfg} style={percentStyle(cfg / 5 * 100)} onChange={(event) => setCfg(event.currentTarget.valueAsNumber)} /></label>
-            <label className="radio-slider-field" htmlFor="radio-apg"><span>Guidance APG <b>{apg.toFixed(2)}</b></span><input id="radio-apg" type="range" min="0" max="1" step="0.05" value={apg} style={percentStyle(apg * 100)} onChange={(event) => setApg(event.currentTarget.valueAsNumber)} /></label>
-            <label className="radio-slider-field" htmlFor="radio-seed"><span>Seed fixe <b>{seedInput.trim() ? seedInput : 'Aléatoire'}</b></span><input id="radio-seed" type="number" min="0" max="2147483647" placeholder="Aléatoire (ex: 42)" value={seedInput} onChange={(event) => setSeedInput(event.currentTarget.value)} className="radio-number-input" /></label>
-          </div>
-          <div className="radio-keyword-field radio-negative-prompt-field">
-            <div className="radio-keyword-field-head">
-              <label htmlFor="radio-negative-prompt">Prompt négatif (termes exclus)</label>
-              {negativePrompt !== defaultNegativePrompt ? (
-                <button
-                  type="button"
-                  className="radio-keyword-reset-btn"
-                  onClick={() => setNegativePrompt(defaultNegativePrompt)}
-                >
-                  Rétablir défaut
-                </button>
-              ) : null}
-            </div>
-            <small>Termes et artefacts exclus · virgules ou retours à la ligne</small>
-            <textarea
-              id="radio-negative-prompt"
-              rows={2}
-              value={negativePrompt}
-              onChange={(event) => setNegativePrompt(event.currentTarget.value)}
-              className="radio-keyword-textarea resize-none"
-              placeholder="lead vocals, speech, broadband static…"
-            />
-          </div>
-          <div className="radio-keyword-chips is-negative" aria-label="Tags exclus de la génération">
-            {negativePromptTokens.map((token) => (
-              <span key={token} className="radio-keyword-chip">
-                <span>{token}</span>
-                <button
-                  type="button"
-                  className="radio-chip-remove"
-                  onClick={() => handleRemoveNegativeKeyword(token)}
-                  aria-label={`Retirer le tag exclu ${token}`}
-                  title={`Retirer ${token}`}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        </details>
-
-      </div>
-      <div className="radio-settings-content" hidden={settingsSection !== 'sound'}>
-        <p className="radio-settings-intro">Le tempo et l’énergie sont à portée de main sur le lecteur. Ici, tu peux aller plus loin.</p>
-        <div className="radio-control-grid">
-
-          <label className="radio-slider-field" htmlFor="radio-drift"><span>Dérive · microtiming <b>±{Math.round(drift / 4)} BPM</b></span><input id="radio-drift" type="range" min="0" max="100" step="1" value={drift} style={percentStyle(drift)} onChange={(event) => setDrift(event.currentTarget.valueAsNumber)} /></label>
-
-          <label className="radio-slider-field" htmlFor="radio-texture"><span>Matière <b>{texture}%</b></span><input id="radio-texture" type="range" min="0" max="100" step="1" value={texture} style={percentStyle(texture)} onChange={(event) => setTexture(event.currentTarget.valueAsNumber)} /></label>
-          <label className="radio-slider-field" htmlFor="radio-duration"><span>Programme <b>{formatClock(durationSeconds)}</b></span><input id="radio-duration" type="range" min={minimumRadioProgramSeconds} max={maximumRadioProgramSeconds} step="1" value={durationSeconds} style={percentStyle((durationSeconds - minimumRadioProgramSeconds) / (maximumRadioProgramSeconds - minimumRadioProgramSeconds) * 100)} onChange={(event) => setDurationSeconds(event.currentTarget.valueAsNumber)} /></label>
-          <label className="radio-slider-field" htmlFor="radio-sft-strength"><span>Influence du modèle <b>{quantizedModelSelected ? '25% FIXE' : `${loraStrength}%`}</b></span><input id="radio-sft-strength" type="range" min="0" max="100" step="1" value={quantizedModelSelected ? 25 : loraStrength} style={percentStyle(quantizedModelSelected ? 25 : loraStrength)} onChange={(event) => setLoraStrength(event.currentTarget.valueAsNumber)} disabled={quantizedModelSelected} /></label>
-        </div>
-        <fieldset className="radio-evolution-field"><legend>Courbe d’évolution</legend><div className="radio-evolution-options">{evolutionLabels.map((item) => <button key={item.id} className={evolution === item.id ? 'is-selected' : ''} type="button" aria-pressed={evolution === item.id} onClick={() => setEvolution(item.id)}><strong>{item.label}</strong><small>{item.hint}</small></button>)}</div></fieldset>
-
-        <details className="radio-structure-details"><summary>Composition <small>{fixedTags.length} sons fixes · {phases.length} phases</small></summary>
-        <div className="radio-keyword-chips" aria-label="Tags utilisés par la génération">
-          {displayedTags.map((token) => {
-            const category = getTagCategory(token)
-            const isFixed = fixedTags.some((f) => f.toLowerCase() === token.toLowerCase())
-            return (
-              <span
-                key={token}
-                className={`radio-keyword-chip is-${category} ${isFixed ? 'is-already-fixed' : ''}`}
-                draggable
-                onDragStart={(e) => handleKeywordChipDragStart(e, token)}
-                title={isFixed ? 'Déjà dans les tags fixes' : 'Glisse vers la zone de tags fixes pour le verrouiller'}
-              >
-                <span>{token}</span>
-                {isFixed && <span className="radio-chip-pin-indicator" title="Verrouillé dans les tags fixes">📌</span>}
-                <button
-                  type="button"
-                  className="radio-chip-remove"
-                  onClick={() => handleRemoveKeyword(token)}
-                  aria-label={`Retirer ${token}`}
-                  title={`Retirer ${token}`}
-                >
-                  ×
-                </button>
-              </span>
-            )
-          })}
-        </div>
-        <div className="radio-pin-picker" aria-label="Épingler des sons à chaque morceau">{keywordTokens.map((tag) => <button type="button" key={tag} aria-pressed={fixedTags.some((fixed) => fixed.toLowerCase() === tag.toLowerCase())} onClick={() => handleToggleFixedTag(tag)}>{fixedTags.some((fixed) => fixed.toLowerCase() === tag.toLowerCase()) ? '✓ ' : '+ '}{tag}</button>)}</div>
-        <div className="radio-fixed-tags-panel" data-testid="radio-fixed-tags-panel">
-          <div className="radio-fixed-tags-header">
-            <div className="radio-fixed-tags-heading">
-              <div className="radio-fixed-tags-title-row">
-                <span className="radio-eyebrow">TAGS PERMANENTS</span>
-                <span className="radio-fixed-tags-count">{fixedTags.length} FIXE{fixedTags.length > 1 ? 'S' : ''}</span>
-              </div>
-              <h4>Zone de tags fixes</h4>
-              <small>Glisse tes tags ici pour qu’ils soient systématiquement sélectionnés à chaque morceau</small>
-            </div>
-            {fixedTags.length > 0 && (
-              <div className="radio-fixed-tags-actions">
-                <button
-                  type="button"
-                  className="radio-keyword-reset-btn"
-                  onClick={handleClearFixedTags}
-                  title="Retirer tous les tags fixes"
-                >
-                  Vider
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div
-            className={`radio-fixed-tags-dropzone ${isFixedDragOver ? 'is-drag-over' : ''} ${fixedTags.length === 0 ? 'is-empty' : ''}`}
-            onDragOver={handleFixedTagDragOver}
-            onDragLeave={handleFixedTagDragLeave}
-            onDrop={(e) => handleFixedTagDrop(e)}
-            data-testid="radio-fixed-tags-dropzone"
-            aria-label="Zone de dépôt des tags fixes"
-          >
-            {fixedTags.length === 0 ? (
-              <div className="radio-fixed-tags-placeholder">
-                <span className="radio-fixed-pin-icon" aria-hidden="true">📌</span>
-                <span>Glisse tes tags ici (depuis les mots-clés ou le catalogue) pour les figer à chaque génération</span>
-              </div>
-            ) : (
-              <div className="radio-fixed-tags-list">
-                {fixedTags.map((tag, index) => {
-                  const category = getTagCategory(tag)
-                  return (
-                    <span
-                      key={`${tag}-${index}`}
-                      className={`radio-keyword-chip radio-fixed-tag-chip is-${category} ${draggedFixedTagIndex === index ? 'is-dragging' : ''}`}
-                      draggable
-                      onDragStart={(e) => handleFixedTagDragStart(e, index, tag)}
-                      onDragOver={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                      }}
-                      onDrop={(e) => {
-                        e.stopPropagation()
-                        handleFixedTagDrop(e, index)
-                      }}
-                      onDragEnd={handleFixedTagDragEnd}
-                      title="Glisse pour réordonner · Clique sur la croix pour retirer"
-                    >
-                      <span className="radio-fixed-pin-icon" aria-hidden="true">📌</span>
-                      <span>{tag}</span>
-                      <button
-                        type="button"
-                        className="radio-chip-remove"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleRemoveFixedTag(index)
-                        }}
-                        aria-label={`Retirer ${tag} des tags fixes`}
-                        title={`Retirer ${tag}`}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="radio-timeline-phases-panel" data-testid="radio-timeline-phases-panel">
-          <div className="radio-phases-header">
-            <div className="radio-phases-heading">
-              <span className="radio-eyebrow">STRUCTURE & PROGRESSION</span>
-              <h4>Frise chronologique des phases</h4>
-              <small>Glisse-dépose les phases pour ordonner la composition du morceau</small>
-            </div>
-            <div className="radio-phases-actions">
-              {phases.length > 0 && (
-                <button type="button" className="radio-keyword-reset-btn" onClick={handleClearPhases}>
-                  Vider
-                </button>
-              )}
-              <button type="button" className="radio-keyword-reset-btn" onClick={handleResetPhases}>
-                Frise par défaut
-              </button>
-            </div>
-          </div>
-
-          <div
-            className="radio-chronological-track"
-            onDragOver={handlePhaseDragOver}
-            onDrop={(e) => {
-              const palettePhase = e.dataTransfer.getData('text/phase-palette')
-              if (palettePhase) {
-                handleAddPhase(palettePhase)
-              }
-            }}
-            aria-label="Séquence chronologique des phases"
-          >
-            {phases.length === 0 ? (
-              <div className="radio-phases-empty-hint">
-                Frise vide · clique sur les phases ci-dessous ou sur « Frise par défaut » pour structurer le morceau
-              </div>
-            ) : (
-              phases.map((phaseLabel, index) => {
-                const phaseMeta = TRACK_PHASES.find((p) => p.label.toLowerCase() === phaseLabel.toLowerCase())
-                return (
-                  <div
-                    key={`${phaseLabel}-${index}`}
-                    className={`radio-phase-step is-phases ${draggedPhaseIndex === index ? 'is-dragging' : ''}`}
-                    draggable
-                    onDragStart={(e) => {
-                      handlePhaseDragStart(e, index)
-                      e.dataTransfer.setData('text/tag', phaseLabel)
-                    }}
-                    onDragOver={handlePhaseDragOver}
-                    onDrop={(e) => handlePhaseDrop(e, index)}
-                    onDragEnd={handlePhaseDragEnd}
-                    title={phaseMeta?.description ?? phaseLabel}
-                  >
-                    <span className="radio-phase-index">{String(index + 1).padStart(2, '0')}</span>
-                    <div className="radio-phase-step-body">
-                      <strong className="radio-phase-step-name">{phaseLabel}</strong>
-                      <small className="radio-phase-step-energy">{phaseMeta ? `⚡ ${phaseMeta.defaultEnergy}%` : ''}</small>
-                    </div>
-                    <button type="button" className="radio-phase-move" disabled={index === 0} aria-label={`Avancer la phase ${phaseLabel} en position ${index + 1}`} onClick={() => setPhases((previous) => { const next = [...previous]; [next[index - 1], next[index]] = [next[index]!, next[index - 1]!]; return next })}>←</button>
-                    <button type="button" className="radio-phase-move" disabled={index === phases.length - 1} aria-label={`Reculer la phase ${phaseLabel} en position ${index + 1}`} onClick={() => setPhases((previous) => { const next = [...previous]; [next[index], next[index + 1]] = [next[index + 1]!, next[index]!]; return next })}>→</button>
-                    <button
-                      type="button"
-                      className="radio-phase-remove-btn"
-                      onClick={() => handleRemovePhase(index)}
-                      aria-label={`Retirer la phase ${phaseLabel} en position ${index + 1}`}
-                      title={`Retirer ${phaseLabel}`}
-                    >
-                      ×
-                    </button>
-                    {index < phases.length - 1 && <span className="radio-phase-connector" aria-hidden="true">→</span>}
-                  </div>
-                )
-              })
-            )}
-          </div>
-
-          <div className="radio-phases-palette">
-            <span className="radio-phases-palette-label">＋ Ajouter :</span>
-            <div className="radio-phases-palette-items">
-              {TRACK_PHASES.map((phase) => (
-                <button
-                  key={phase.id}
-                  type="button"
-                  className="radio-phase-add-chip is-phases"
-                  aria-label={`Ajouter ${phase.label}`}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('text/phase-palette', phase.label)
-                    e.dataTransfer.setData('text/tag', phase.label)
-                    e.dataTransfer.setData('text/plain', phase.label)
-                  }}
-                  onClick={() => handleAddPhase(phase.label)}
-                  title={phase.description}
-                >
-                  <span className="radio-phase-chip-code">{phase.shortCode}</span>
-                  <span className="radio-phase-chip-name">{phase.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        </details>
-        <details className="radio-dsp-panel" data-testid="radio-dsp-panel"><summary className="radio-advanced-summary">Traitement audio <span>Égalisation, filtre & limiteur</span></summary>
-          <label className="radio-dsp-switch" htmlFor="radio-dsp-enabled">
-            <input id="radio-dsp-enabled" type="checkbox" checked={dspEnabled} onChange={(event) => setDspEnabled(event.currentTarget.checked)} />
-            <span><strong>DSP PRO / MONITORING</strong><small>Rondeur kick 60Hz, clarté 2.2kHz, anti-traîne 8.5kHz & limiteur doux</small></span>
-            <b>{dspEnabled ? 'ON' : 'OFF'}</b>
-          </label>
-          <p>Chaîne temps réel · le WAV généré reste intact · réglages appliqués uniquement au player.</p>
-          <div className="radio-dsp-control-grid">
-            <label className="radio-slider-field" htmlFor="radio-preamp"><span>Préampli <b>{formatDecibels(preampDb)}</b></span><input id="radio-preamp" type="range" min="-12" max="12" step="0.5" value={preampDb} style={percentStyle((preampDb + 12) / 24 * 100)} onChange={(event) => setPreampDb(event.currentTarget.valueAsNumber)} /></label>
-            <label className="radio-slider-field" htmlFor="radio-dsp-amount"><span>DSP / clarté & rondeur <b>{dspAmount}%</b></span><input id="radio-dsp-amount" type="range" min="0" max="100" step="1" value={dspAmount} style={percentStyle(dspAmount)} onChange={(event) => setDspAmount(event.currentTarget.valueAsNumber)} disabled={!dspEnabled} /></label>
-            <label className="radio-slider-field" htmlFor="radio-noise-filter"><span>Filtre bruit (anti-artefacts HF) <b>{noiseFilter}%</b></span><input id="radio-noise-filter" type="range" min="0" max="100" step="1" value={noiseFilter} style={percentStyle(noiseFilter)} onChange={(event) => setNoiseFilter(event.currentTarget.valueAsNumber)} disabled={!dspEnabled} /></label>
-            <label className="radio-dsp-switch radio-dsp-limiter-switch" htmlFor="radio-limiter-enabled">
-              <input id="radio-limiter-enabled" type="checkbox" checked={limiterEnabled} onChange={(event) => setLimiterEnabled(event.currentTarget.checked)} />
-              <span><strong>LIMITER INTELLIGENT</strong><small>Attaque 16ms (laisse respirer le kick) + knee doux</small></span>
-              <b>{limiterEnabled ? 'ON' : 'OFF'}</b>
-            </label>
-            <label className="radio-slider-field" htmlFor="radio-limiter-ceiling"><span>Plafond <b>{formatDecibels(limiterCeilingDb)}</b></span><input id="radio-limiter-ceiling" type="range" min="-6" max="-0.3" step="0.1" value={limiterCeilingDb} style={percentStyle((limiterCeilingDb + 6) / 5.7 * 100)} onChange={(event) => setLimiterCeilingDb(event.currentTarget.valueAsNumber)} disabled={!limiterEnabled} /></label>
-          </div>
-          <div className="radio-dsp-meter" aria-label="Mètre de sortie DSP">
-            <div className="radio-dsp-meter-heading"><span>MONITORING LIVE</span><b>{limiterEnabled ? `GR ${formatDecibels(dspMeter.gainReductionDb)}` : 'LIMITEUR OFF'}</b></div>
-            <div className="radio-dsp-meter-bar"><i style={{ width: `${clamp((dspMeter.outputPeakDb + 60) / 60 * 100, 0, 100)}%` }} /></div>
-            <div className="radio-dsp-meter-values"><span>IN {formatDecibels(dspMeter.inputPeakDb)}</span><span>OUT {formatDecibels(dspMeter.outputPeakDb)}</span><span>CEIL {formatDecibels(limiterCeilingDb)}</span></div>
-          </div>
-        </details>
-
-        <details className="radio-session-details"><summary>Détails de la session</summary>
-        <div className="radio-procedural-panel" data-testid="radio-procedural-panel">
-          <div className="radio-procedural-toggle">
-            <i aria-hidden="true" />
-            <span><strong>Évolution procédurale</strong><small>Seuls les tags saisis sont utilisés comme matière; le BPM cible reste verrouillé, énergie et couches dérivent lentement</small></span>
-            <b>ON</b>
-          </div>
-          <p>{activeRecipe ? `Flux actif · ${activeRecipe.tags.length} tags tirés au hasard depuis un pool de ${activeRecipe.keywordPool.length} tags utilisateur · ${activeRecipe.bpm} BPM cible verrouillé · énergie ${activeRecipe.energy}% · matière ${activeRecipe.texture}%` : `Tags utilisateur uniquement · nombre de tags variable à chaque génération · BPM cible verrouillé · énergie et matière évoluent sur 6 min`}</p>
-        </div>
-        <div className="radio-buffer" aria-label="État du programme">
-          <div className="radio-buffer-heading"><span>PROGRAMME AUDIO</span><b>{generating || continuationGenerating ? `${generationProgress}%` : bufferAdvance}</b></div>
-          <div className="radio-buffer-track" aria-hidden="true"><i className={currentTrack ? 'is-playing' : 'is-empty'} /><i className={generating || continuationGenerating ? 'is-building' : currentTrack ? 'is-ready' : 'is-empty'} /><i className={continuationTrack ? 'is-ready' : 'is-empty'} /><i className="is-empty" /></div>
-          <div className="radio-buffer-meta"><span>{currentTrack ? 'PROGRAMME' : 'VIDE'}</span><span>{generating ? 'COMPOSITION' : continuationBufferState}</span><span>UN SEUL FLUX</span><span>{currentTrack ? 'SANS COUPURE' : 'PRÊT'}</span></div>
-        </div>    <div className="radio-queue" aria-label="Programme de la radio">
-      {activeQueueTrack ? <>
-        <RadioTrackCard track={activeQueueTrack} slot="current" statusLabel={currentTrack ? (playing ? 'PLAYING / ACTIF' : 'PAUSED / PAUSE') : 'BUILDING / CALCUL'} building={!currentTrack} />
-        {nextQueueTrack ? <RadioTrackCard track={nextQueueTrack} slot="next" statusLabel={continuationTrack ? 'READY / PRÊT' : continuationGenerating ? `BUILDING / ${generationProgress}%` : 'WAITING / ATTENTE'} building={continuationGenerating} /> : <div className="radio-queue-row is-next is-empty" data-testid="next-radio-track" aria-label="Prochain morceau"><div className="radio-queue-track-heading"><span>02 · UP NEXT</span><b>WAITING / ATTENTE</b></div><strong className="radio-queue-title">Prochain morceau en attente</strong><small>Les paramètres complets apparaîtront dès le lancement de sa préparation.</small></div>}
-      </> : <div className="radio-queue-empty">Aucun flux dans le lecteur · importe ton modèle puis lance la composition.</div>}
-    </div>
-
-        </details>
-      </div>
-      <div className="radio-settings-footer"><span>Réglages appliqués automatiquement.</span><button type="button" onClick={() => setSettingsOpen(false)}>Retour à la radio</button></div>
-    </RadioDialog>
+    <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="auto" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); void dspRef.current?.resume() }} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError('Le WAV généré ne peut pas être décodé par le navigateur.'); setStatus('Lecture impossible · le moteur prépare un WAV compatible navigateur.') }} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={() => { if (audioRef.current?.duration && Number.isFinite(audioRef.current.duration)) setPosition(Math.min(audioRef.current.currentTime, audioRef.current.duration)) }} onEnded={handleAudioEnded} />
     <RadioDialog open={tagModalOpen} onClose={() => setTagModalOpen(false)} title="Explorer les sons" wide>
-<p className="radio-catalog-description">{STABLE_AUDIO_TAG_CATALOG_NOTE}</p>
+<p className="radio-catalog-description">Choisis les sons à ajouter à ta direction. Épingle ceux que tu veux retrouver dans chaque morceau.</p>
           <div className="radio-modal-controls">
             <input
               aria-label="Rechercher un son"
@@ -1719,7 +1352,7 @@ export const GenerativeRadio = ({
                         tabIndex={0}
                         className={`radio-modal-phase-card is-phases ${countInPhases > 0 ? 'is-in-timeline' : ''}`}
                         onClick={() => handleAddPhase(phase.label)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleAddPhase(phase.label) } }}
+                        onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleAddPhase(phase.label) } }}
                         draggable
                         onDragStart={(e) => {
                           e.dataTransfer.setData('text/phase-palette', phase.label)
@@ -1773,7 +1406,7 @@ export const GenerativeRadio = ({
                         tabIndex={0}
                         className={`radio-modal-tag-item is-${tag.category} ${isSelected ? 'is-selected' : ''}`}
                         onClick={() => handleToggleTag(tag.label)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggleTag(tag.label) } }}
+                        onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleToggleTag(tag.label) } }}
                         aria-pressed={isSelected}
                         draggable
                         onDragStart={(e) => {
@@ -1816,6 +1449,7 @@ export const GenerativeRadio = ({
             )}
           </div>
 
+          <details className="radio-catalog-note"><summary>À propos de ces suggestions</summary><p>{STABLE_AUDIO_TAG_CATALOG_NOTE}</p></details>
           <div className="radio-modal-footer">
             <div className="radio-modal-footer-stats">
               <span><b>{keywordTokens.length}</b> tags actifs</span>
@@ -1833,5 +1467,5 @@ export const GenerativeRadio = ({
             </button>
           </div>
     </RadioDialog>
-  </section>
+  </section></div>
 }

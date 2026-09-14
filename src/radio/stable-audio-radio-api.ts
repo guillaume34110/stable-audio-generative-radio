@@ -1,3 +1,5 @@
+import { localEngineToken, localEngineUrl } from './local-engine-client'
+
 export type StableAudioRadioAdapter = {
   id: string
   filename: string
@@ -61,21 +63,36 @@ const radioApiBaseUrl = (import.meta.env.VITE_RADIO_API_URL ?? '').replace(/\/$/
 
 const radioApiUrl = (path: string): string => `${radioApiBaseUrl}${path}`
 
+export const LOCAL_RADIO_PAIRING_ERROR = 'Le moteur local doit être appairé pour charger et générer un modèle Stable Audio 3.'
+export const LOCAL_RADIO_NETWORK_ERROR = 'Connexion au moteur Stable Audio bloquée. Autorise l’accès au réseau local pour ce site, puis réessaie.'
+
 const normalizeModelCopy = (copy: string): string => copy
   .replace(/\bBerlin SFT\b/g, 'modèle Berlin')
   .replace(/\bSFT\b/g, 'modèle')
 
 const stableAudioRadioResponse = async (path: string, init?: RequestInit): Promise<Response> => {
+  const token = localEngineToken()
+  const headers = new Headers(init?.headers)
+  if (token) headers.set('X-Onus-Token', token)
+
+  const request: RequestInit & { targetAddressSpace?: 'loopback' } = {
+    ...init,
+    headers,
+    credentials: token ? 'same-origin' : 'include',
+  }
+  if (token) request.targetAddressSpace = 'loopback'
+
   try {
-    return await fetch(radioApiUrl(path), { ...init, credentials: 'include' })
+    return await fetch(token ? localEngineUrl(path) : radioApiUrl(path), request)
   } catch {
-    throw new Error('Stable Audio 3 is unreachable. Start the local API and try again.')
+    throw new Error(LOCAL_RADIO_NETWORK_ERROR)
   }
 }
 
 const stableAudioRadioApi = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await stableAudioRadioResponse(path, init)
   if (!response.ok) {
+    if (response.status === 401) throw new Error(LOCAL_RADIO_PAIRING_ERROR)
     const raw = await response.text().catch(() => '')
     let detail: unknown = raw
     try {
