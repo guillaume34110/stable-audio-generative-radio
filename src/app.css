@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&family=Manrope:wght@600;700;800&display=swap');
 @import './radio/machine-skins.css';
+@import './radio/machine-displays.css';
 :root {
  color-scheme: dark; --paper:#171c20; --surface:#20262b; --ink:#e6eaf2; --muted:#9ba6b2; --line:#4b555d; --accent:#ffba3b; --tint:#463219;
  --screen:#ffc13b; --screen-dim:#b88b37; --silk:'Barlow Condensed','Arial Narrow',sans-serif; --display:'Rajdhani','Arial Narrow',monospace;

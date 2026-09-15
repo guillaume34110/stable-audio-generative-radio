@@ -69,10 +69,10 @@
  --frame-edge:#a04d60; --frame-shadow:inset 0 3px 2px #ffbccb3f,inset 0 -19px 3px #210711c7,0 4px 1px #16040a,0 25px 50px #14030a99;
  --cheek-base:#6f2438; --cheek-finish:linear-gradient(90deg,#2b0c18,#e59aa875 10%,#7b2e48 30% 78%,#ffc1cd65 85%,#32101e),linear-gradient(#b84c6b,#4d1427);
  --cheek-edge:#ff9cad; --cheek-foot:#2b0d19; --brand-ink:#fff1f4; --brand-light:#ff6c77;
- --screen:#8fe2ff; --screen-dim:#6aaabc; --screen-strong:#c0f1ff; --screen-glow:#55d5ff5a;
- --screen-bg:#100810; --screen-scan:#1b0b16; --screen-border:#a5577185; --screen-divider:#633043; --screen-trim:#321424;
- --screen-chip:#240d18; --screen-chip-edge:#a95d72; --screen-inverse:#190811;
- --eq-grid:#603044; --eq-border:#a75b75; --eq-curve:#8fe7ff;
+ --screen:#ff5f6d; --screen-dim:#b55a67; --screen-strong:#ff9ba4; --screen-glow:#ff45585c;
+ --screen-bg:#180609; --screen-scan:#2a0c12; --screen-border:#a7435485; --screen-divider:#642631; --screen-trim:#3a121a;
+ --screen-chip:#2b0b12; --screen-chip-edge:#b34f63; --screen-inverse:#21070d;
+ --eq-grid:#69313e; --eq-border:#b65a6c; --eq-curve:#ff8291;
  --led-green:#5dffc7; --led-warm:#ffc658; --led-cyan:#71dcff; --led-purple:#b8a2ff; --led-red:#ff506a;
  --action-tint:hue-rotate(338deg) saturate(1.45) brightness(1.16); --action-glow:#ff536a5f; --action-ink:#3b0914; --action-disabled:#6c3340;
  --focus-ring:#ff9eae; --silk-shadow:0 1px #2c0713; --menu-bg:#4c1929; --skin-led-color:#ff506a;

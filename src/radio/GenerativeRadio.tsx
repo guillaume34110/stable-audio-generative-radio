@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ChangeEvent, type CSSProperties, type ReactElement } from 'react'
 import { RadioDialog } from './RadioDialog'
+import { SevenSegment } from './SevenSegment'
 import type {
   StableAudioRadioAdapter,
   StableAudioRadioModelVariant,
@@ -450,16 +451,20 @@ type MachineKnobProps = {
   max: number
   step?: number
   display: string
+  unit?: string
+  clock?: boolean
   onChange: (value: number) => void
   accent?: 'lime' | 'cyan' | 'orange' | 'pink' | 'red'
   disabled?: boolean
 }
 
-const MachineKnob = ({ id, label, value, min, max, step = 1, display, onChange, accent = 'lime', disabled = false }: MachineKnobProps): ReactElement => {
+const MachineKnob = ({ id, label, value, min, max, step = 1, display, unit = '', clock = false, onChange, accent = 'lime', disabled = false }: MachineKnobProps): ReactElement => {
   const initialValue = useRef(value)
   const drag = useRef<{ x: number; y: number; value: number } | null>(null)
   const ratio = Math.max(0, Math.min(1, (value - min) / (max - min)))
   const style = { '--knob-angle': `${-135 + ratio * 270}deg`, '--knob-arc': `${ratio * 270}deg` } as CSSProperties
+  const decimals = clock ? 0 : (String(step).split('.')[1]?.length ?? 0)
+  const digits = clock ? 4 : Math.trunc(Math.max(Math.abs(min), Math.abs(max))).toString().length + decimals
   return <label className={`machine-knob is-${accent} ${disabled ? 'is-disabled' : ''}`} htmlFor={id}>
     <span className="machine-knob-label">{label}</span>
     <span className="machine-knob-control" style={style}>
@@ -474,7 +479,10 @@ const MachineKnob = ({ id, label, value, min, max, step = 1, display, onChange, 
         onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }}
         onDoubleClick={() => onChange(initialValue.current)} />
     </span>
-    <span className="machine-screen machine-knob-value" aria-hidden="true">{display}</span>
+    {display && <span className="machine-readout" aria-hidden="true">
+      <span className="machine-screen machine-numeric-screen machine-knob-value"><SevenSegment value={clock ? formatClock(value) : value} digits={digits} decimals={decimals} signed={min < 0} clock={clock} /></span>
+      {unit && <span className="machine-unit">{unit}</span>}
+    </span>}
   </label>
 }
 
@@ -488,23 +496,31 @@ type TrackReadoutProps = {
   position?: number
 }
 
-const TrackReadout = ({ track, next = false, status, progress, position = 0 }: TrackReadoutProps): ReactElement =>
-  <section className={`machine-panel machine-track-panel ${next ? 'is-next' : 'is-current'}`} aria-label={next ? 'Prochain morceau' : 'Morceau actif'} data-testid={next ? 'next-radio-track' : 'current-radio-track'}>
-    <h2 className="machine-silkscreen">{next ? 'À SUIVRE' : 'EN LECTURE'}</h2>
+const TrackReadout = ({ track, next = false, status, progress, position = 0 }: TrackReadoutProps): ReactElement => {
+  const calculationProgress = status.match(/^CALCUL (\d+)%$/)?.[1]
+  return <section className={`machine-panel machine-track-panel ${next ? 'is-next' : 'is-current'}`} aria-label={next ? 'Prochain morceau' : 'Morceau actif'} data-testid={next ? 'next-radio-track' : 'current-radio-track'}>
+    <h2 className="machine-silkscreen">{next ? 'À SUIVRE' : 'EN LECTURE'}<span className="machine-unit">{next ? '02 / NEXT' : '01 / NOW'}</span></h2>
     <div className="machine-screen machine-track-screen">
-      <div className="machine-screen-head"><span>{next ? '02 / NEXT' : '01 / NOW'}</span><b>{status}</b></div>
+      <div className="machine-screen-head"><b className="machine-track-status">{calculationProgress === undefined ? status : <>CALCUL <SevenSegment value={calculationProgress} digits={3} />%</>}</b></div>
       <h3 title={track?.title}>{track?.title ?? (next ? 'Prochain morceau en attente' : 'Aucun morceau chargé')}</h3>
-      <div className="machine-track-clock"><strong>{track ? formatClock(next ? track.durationSeconds : position) : '--:--'}</strong><span>{next ? (track?.audioUrl ? 'DURÉE' : 'DURÉE CIBLE') : `/ ${track ? formatClock(track.durationSeconds) : '--:--'}`}</span><div className="machine-progress" aria-label={next ? 'Préparation du prochain morceau' : 'Avancement du morceau'}><i style={{ width: `${progress}%` }} /></div></div>
+      <div className="machine-track-clock">
+        <SevenSegment value={track ? formatClock(next ? track.durationSeconds : position) : null} digits={4} clock />
+        {next ? <span className="machine-track-duration-label">{track?.audioUrl ? 'DURÉE' : 'DURÉE CIBLE'}</span> : <><span className="machine-clock-divider">/</span><SevenSegment className="machine-track-duration" value={track ? formatClock(track.durationSeconds) : null} digits={4} clock /></>}
+        <div className="machine-progress" aria-label={next ? 'Préparation du prochain morceau' : 'Avancement du morceau'}><i style={{ width: `${progress}%` }} /></div>
+      </div>
       <dl className="machine-data-grid">
         {[
-          ['BPM CIBLE', track?.bpm], ['TONALITÉ', track?.key], ['ÉNERGIE', track ? `${track.recipe.energy}%` : null], ['TEXTURE', track ? `${track.recipe.texture}%` : null],
-          ['MODÈLE', track?.recipe.modelVariant.toUpperCase()], ['SEED', track?.recipe.seed], ['ÉVOLUTION', track ? evolutionLabel(track.evolution) : null], ['MODE', track ? track.mode === 'independent' ? 'LIBRE' : 'CONTINU' : null],
-        ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value ?? '—'}</dd></div>)}
+          { label: 'BPM CIBLE', value: track?.bpm, digits: 3 }, { label: 'TONALITÉ', value: track?.key },
+          { label: 'ÉNERGIE', unit: ' %', value: track?.recipe.energy, digits: 3 }, { label: 'TEXTURE', unit: ' %', value: track?.recipe.texture, digits: 3 },
+          { label: 'MODÈLE', value: track?.recipe.modelVariant.toUpperCase() }, { label: 'SEED', value: track?.recipe.seed, digits: 10 },
+          { label: 'ÉVOLUTION', value: track ? evolutionLabel(track.evolution) : null }, { label: 'MODE', value: track ? track.mode === 'independent' ? 'LIBRE' : 'CONTINU' : null },
+        ].map(({ label, unit, value, digits }) => <div key={label}><dt>{label}{unit}</dt><dd>{digits ? <SevenSegment value={value ?? null} digits={digits} /> : value ?? '—'}</dd></div>)}
       </dl>
       <div className="machine-track-detail"><span>TAGS</span><p title={track?.recipe.keywords}>{track?.recipe.keywords ?? '—'}</p></div>
       <div className="machine-track-detail"><span>STRUCT.</span><p>{track ? track.recipe.phases?.join(' › ') || 'AUTO' : '—'}</p></div>
     </div>
   </section>
+}
 
 type GenerativeRadioProps = {
   onBack?: () => void
@@ -1211,7 +1227,7 @@ export const GenerativeRadio = ({
   // Compensate the layout width so fitting the height never creates side margins.
   const machineStyle = { '--machine-scale': machineFit.scale, width: `${100 / machineFit.scale}%`, transform: `scale(${machineFit.scale})` } as CSSProperties
   const activeSkinIndex = machineSkins.findIndex((skin) => skin.id === machineSkin)
-  const activeSkin = machineSkins[activeSkinIndex] ?? machineSkins[1]
+  const activeSkin = machineSkins[activeSkinIndex] ?? machineSkins[0]
 
   return <div className="machine-fit" style={{ height: machineFit.height ? machineFit.height * machineFit.scale : undefined }}><section ref={machineRef} style={machineStyle} data-skin={machineSkin} data-surface={activeSkin.surface} data-lcd={activeSkin.lcd} data-pattern={activeSkin.pattern} className={`radio-widget machine ${playing ? 'is-playing' : ''}`} aria-labelledby="radio-widget-heading" data-testid="generative-radio">
     <div className="machine-chassis-screws" aria-hidden="true">{Array.from({ length: 6 }, (_, index) => <i key={index} />)}</div>
@@ -1220,8 +1236,9 @@ export const GenerativeRadio = ({
         <div className="machine-brand"><svg aria-hidden="true" viewBox="0 0 54 48"><path d="M2 27h6l5-13 6 26 7-36 7 39 6-26 5 17 4-7h4" /></svg><h1 id="radio-widget-heading">radio.studio</h1><small>GENERATIVE MUSIC WORKSTATION</small></div>
         <div className="machine-skin-selector" role="group" aria-label="Skin de la machine">
           <span className="machine-skin-label">SKIN</span>
-          <MachineKey type="button" className="machine-key machine-skin-toggle" aria-label="Skin suivant" aria-controls="machine-skin-readout" title={`Skin suivant · ${activeSkin.description}`} onClick={() => setMachineSkin((current) => machineSkins[(machineSkins.findIndex((skin) => skin.id === current) + 1) % machineSkins.length]!.id)}><span aria-hidden="true">↻</span></MachineKey>
-          <output id="machine-skin-readout" role="img" className="machine-screen machine-skin-readout" aria-label="Skin sélectionné" aria-live="polite"><span>{activeSkin.label}</span><small>{String(activeSkinIndex + 1).padStart(2, '0')} / {machineSkins.length}</small></output>
+          <MachineKey type="button" className="machine-key machine-skin-toggle" aria-label="Skin suivant" aria-controls="machine-skin-readout" title={`Skin ${activeSkinIndex + 1} / ${machineSkins.length} · Cliquer pour le suivant`} onClick={() => setMachineSkin((current) => machineSkins[(machineSkins.findIndex((skin) => skin.id === current) + 1) % machineSkins.length]!.id)}><span aria-hidden="true">↻</span></MachineKey>
+          <output id="machine-skin-readout" role="status" className="machine-screen machine-numeric-screen machine-skin-readout" aria-label="Skin sélectionné" aria-live="polite"><SevenSegment value={String(activeSkinIndex + 1).padStart(2, '0')} digits={2} /></output>
+          <span className="machine-unit machine-skin-total">/ {machineSkins.length}</span>
         </div>
       </div>
       <div className="machine-model-screen machine-screen"><select id="machine-model-variant" aria-label="Variante du modèle" value={modelVariant} onChange={selectModelVariant}>{modelVariantOptions.map((variant) => <option key={variant.id} value={variant.id} disabled={!variant.available}>{variant.label}{variant.available ? '' : ' · indisponible'}</option>)}</select><select aria-label="Modèles installés" value={selectedAdapter?.id ?? ''} disabled={quantizedModelSelected} onChange={selectInstalledModel}><option value="">{quantizedModelSelected ? 'BERLIN · FUSIONNÉ' : 'CHOISIR UN MODÈLE'}</option>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.filename}</option>)}</select>{pairingUrl ? <a href={pairingUrl}>APPAIRER LE MOTEUR ↗</a> : <span>{reconnecting ? 'CONNEXION…' : runtimeReady === false ? 'ENGINE OFFLINE' : runtimeReady === null ? 'SCANNING ENGINE' : needsModel ? 'MODEL REQUIRED' : 'LOCAL READY'}</span>}</div>
@@ -1253,7 +1270,7 @@ export const GenerativeRadio = ({
         </div>
       </section>
         <section className="machine-panel machine-exclude">
-        <h2 className="machine-silkscreen">EXCLUDE <span className="machine-screen machine-count">{negativePromptTokens.length} TAGS</span></h2>
+        <h2 className="machine-silkscreen">EXCLUDE <span className="machine-tag-count" aria-label={`${negativePromptTokens.length} tags exclus`}><span className="machine-screen machine-numeric-screen machine-count" aria-hidden="true"><SevenSegment value={String(Math.min(99, negativePromptTokens.length)).padStart(2, '0')} digits={2} />{negativePromptTokens.length > 99 && <span className="machine-count-overflow">+</span>}</span><span className="machine-unit">TAGS</span></span></h2>
         <div className="machine-tag-display-row">
           <div className="machine-screen machine-negative-screen">
             <textarea id="radio-negative-prompt-face" rows={1} wrap="soft" value={negativePrompt} onChange={(event) => setNegativePrompt(event.currentTarget.value)} aria-label="Exclusions sonores" />
@@ -1287,12 +1304,12 @@ export const GenerativeRadio = ({
       <section className="machine-panel machine-macros" aria-label="Macros">
         <h2 className="machine-silkscreen">MACROS</h2>
         <div className="machine-knob-bank">
-          <MachineKnob id="radio-bpm" label="Tempo" value={bpm} min={60} max={220} display={`${bpm} BPM`} onChange={setBpm} accent="orange" />
-          <MachineKnob id="radio-energy" label="Energy" value={energy} min={0} max={100} display={`${energy} %`} onChange={setEnergy} />
-          <MachineKnob id="radio-texture" label="Texture" value={texture} min={0} max={100} display={`${texture} %`} onChange={setTexture} accent="pink" />
-          <MachineKnob id="radio-drift" label="Drift" value={drift} min={0} max={100} display={`${drift} %`} onChange={setDrift} accent="cyan" />
-          <MachineKnob id="radio-duration" label="Durée" value={durationSeconds} min={minimumRadioProgramSeconds} max={maximumRadioProgramSeconds} step={5} display={formatClock(durationSeconds)} onChange={setDurationSeconds} accent="red" />
-          <MachineKnob id="radio-lora" label="Influence" value={quantizedModelSelected ? 25 : loraStrength} min={0} max={100} display={quantizedModelSelected ? '25 % FIXE' : `${loraStrength} %`} disabled={quantizedModelSelected} onChange={setLoraStrength} />
+          <MachineKnob id="radio-bpm" label="Tempo" value={bpm} min={60} max={220} display={`${bpm} BPM`} unit="BPM" onChange={setBpm} accent="orange" />
+          <MachineKnob id="radio-energy" label="Energy" value={energy} min={0} max={100} display={`${energy} %`} unit="%" onChange={setEnergy} />
+          <MachineKnob id="radio-texture" label="Texture" value={texture} min={0} max={100} display={`${texture} %`} unit="%" onChange={setTexture} accent="pink" />
+          <MachineKnob id="radio-drift" label="Drift" value={drift} min={0} max={100} display={`${drift} %`} unit="%" onChange={setDrift} accent="cyan" />
+          <MachineKnob id="radio-duration" label="Durée" value={durationSeconds} min={minimumRadioProgramSeconds} max={maximumRadioProgramSeconds} step={5} display={formatClock(durationSeconds)} unit="M:S" clock onChange={setDurationSeconds} accent="red" />
+          <MachineKnob id="radio-lora" label="Influence" value={quantizedModelSelected ? 25 : loraStrength} min={0} max={100} display={quantizedModelSelected ? '25 % FIXE' : `${loraStrength} %`} unit="%" disabled={quantizedModelSelected} onChange={setLoraStrength} />
         </div>
       </section>
 
@@ -1316,17 +1333,17 @@ export const GenerativeRadio = ({
           </div>
         </div>
         <div className="machine-eq-controls">
-          <MachineKnob id="machine-low" label="LOW" value={lowGainDb} min={-12} max={12} step={.5} display={`${lowGainDb > 0 ? '+' : ''}${lowGainDb.toFixed(1)} dB`} onChange={setLowGainDb} accent="orange" />
-          <MachineKnob id="machine-mid" label="MID" value={midGainDb} min={-12} max={12} step={.5} display={`${midGainDb > 0 ? '+' : ''}${midGainDb.toFixed(1)} dB`} onChange={setMidGainDb} />
-          <MachineKnob id="machine-high" label="HIGH" value={highGainDb} min={-12} max={12} step={.5} display={`${highGainDb > 0 ? '+' : ''}${highGainDb.toFixed(1)} dB`} onChange={setHighGainDb} accent="cyan" />
-          <MachineKnob id="machine-preamp" label="PREAMP" value={preampDb} min={-12} max={12} step={.5} display={`${preampDb.toFixed(1)} dB`} onChange={setPreampDb} accent="pink" />
-          <MachineKnob id="machine-volume" label="VOLUME" value={volume} min={0} max={100} display={`${volume} %`} onChange={setVolume} accent="orange" />
+          <MachineKnob id="machine-low" label="LOW" value={lowGainDb} min={-12} max={12} step={.5} display={`${lowGainDb > 0 ? '+' : ''}${lowGainDb.toFixed(1)} dB`} unit="dB" onChange={setLowGainDb} accent="orange" />
+          <MachineKnob id="machine-mid" label="MID" value={midGainDb} min={-12} max={12} step={.5} display={`${midGainDb > 0 ? '+' : ''}${midGainDb.toFixed(1)} dB`} unit="dB" onChange={setMidGainDb} />
+          <MachineKnob id="machine-high" label="HIGH" value={highGainDb} min={-12} max={12} step={.5} display={`${highGainDb > 0 ? '+' : ''}${highGainDb.toFixed(1)} dB`} unit="dB" onChange={setHighGainDb} accent="cyan" />
+          <MachineKnob id="machine-preamp" label="PREAMP" value={preampDb} min={-12} max={12} step={.5} display={`${preampDb.toFixed(1)} dB`} unit="dB" onChange={setPreampDb} accent="pink" />
+          <MachineKnob id="machine-volume" label="VOLUME" value={volume} min={0} max={100} display={`${volume} %`} unit="%" onChange={setVolume} accent="orange" />
         </div>
         <div className="machine-dsp-strip">
           <button type="button" className={`machine-switch ${dspEnabled ? 'is-on' : ''}`} aria-pressed={dspEnabled} onClick={() => setDspEnabled(!dspEnabled)}><span>DSP</span><i aria-hidden="true" /><b className="machine-screen">{dspEnabled ? 'ON' : 'OFF'}</b></button>
-          <MachineKnob id="machine-filter" label="FILTER" value={noiseFilter} min={0} max={100} display={`${noiseFilter} %`} onChange={setNoiseFilter} />
+          <MachineKnob id="machine-filter" label="FILTER" value={noiseFilter} min={0} max={100} display={`${noiseFilter} %`} unit="%" onChange={setNoiseFilter} />
           <button type="button" className={`machine-switch ${limiterEnabled ? 'is-on' : ''}`} aria-pressed={limiterEnabled} onClick={() => setLimiterEnabled(!limiterEnabled)}><span>LIMITER</span><i aria-hidden="true" /><b className="machine-screen">{limiterEnabled ? 'ON' : 'OFF'}</b></button>
-          <MachineKnob id="machine-ceiling" label="PLAFOND" value={limiterCeilingDb} min={-6} max={-.3} step={.1} display={`${limiterCeilingDb.toFixed(1)} dB`} onChange={setLimiterCeilingDb} />
+          <MachineKnob id="machine-ceiling" label="PLAFOND" value={limiterCeilingDb} min={-6} max={-.3} step={.1} display={`${limiterCeilingDb.toFixed(1)} dB`} unit="dB" onChange={setLimiterCeilingDb} />
         </div>
       </section>
 
@@ -1336,7 +1353,7 @@ export const GenerativeRadio = ({
           <MachineKnob id="machine-steps" label="STEPS" value={steps} min={1} max={24} display={String(steps)} onChange={setSteps} />
           <MachineKnob id="machine-cfg" label="CFG" value={cfg} min={0} max={5} step={.1} display={cfg.toFixed(1)} onChange={setCfg} />
           <MachineKnob id="machine-apg" label="APG" value={apg} min={0} max={1} step={.05} display={apg.toFixed(2)} onChange={setApg} />
-          <label className="machine-seed">SEED<input className="machine-screen" type="number" min="0" max="2147483647" placeholder="AUTO" value={seedInput} onChange={(event) => setSeedInput(event.currentTarget.value)} /></label>
+          <label className="machine-seed"><span className="machine-seed-label">SEED<span className={`machine-auto ${seedInput === '' ? 'is-on' : ''}`} aria-hidden="true"><i />AUTO</span></span><span className="machine-seed-screen"><span className="machine-screen machine-numeric-screen" aria-hidden="true"><SevenSegment value={seedInput === '' ? '' : Number(seedInput)} digits={10} /></span><input type="number" min="0" max="2147483647" aria-label="SEED" aria-valuetext={seedInput || 'Automatique'} title="Seed — laisser vide pour le mode automatique" value={seedInput} onChange={(event) => setSeedInput(event.currentTarget.value)} /></span></label>
         </div>
         <MachineKey type="button" className="machine-key machine-new-direction" disabled={generating || continuationGenerating} onClick={() => void generateNext(true)} aria-label="Repartir de cette direction ↗">NOUVELLE DIRECTION ↗</MachineKey>
       </section>
@@ -1355,11 +1372,13 @@ export const GenerativeRadio = ({
       </section>
 
       <div className="machine-panel machine-timeline">
-        <div className="machine-screen"><span>{formatClock(position)} / {currentTrack ? formatClock(currentTrackDuration) : '--:--'}</span><span>{currentTrack ? `−${formatClock(Math.max(0, currentTrackDuration - position))}` : 'STANDBY'}</span></div>
+        <div className="machine-timeline-readouts">
+          {[{ label: 'ÉCOULÉ · M:S', value: formatClock(position) }, { label: 'DURÉE · M:S', value: currentTrack ? formatClock(currentTrackDuration) : null }, { label: 'RESTANT · M:S', value: currentTrack ? formatClock(Math.max(0, currentTrackDuration - position)) : null }].map(({ label, value }) => <div key={label}><span className="machine-screen machine-numeric-screen"><SevenSegment value={value} digits={4} clock /></span><span className="machine-unit">{label}</span></div>)}
+        </div>
         <div className="machine-fader-track"><input type="range" disabled={!currentTrack} min="0" max={currentTrackDuration} step="0.1" value={Math.min(position, currentTrackDuration)} onChange={handleSeek} aria-label="Position dans le programme" /></div>
       </div>
       <div className="machine-panel machine-generate-panel"><MachineKey type="submit" className="machine-key machine-generate" disabled={generating || continuationGenerating}><span aria-hidden="true">✦</span> GÉNÉRER {currentTrack ? 'LA SUITE' : 'LE MORCEAU'}</MachineKey></div>
-      <div className="machine-status machine-screen" role="status" aria-live="polite">{error ? <span id="radio-error" role="alert">{error}</span> : engineMessage && runtimeReady !== true ? engineMessage : status}</div>
+      <div className="machine-status machine-screen" role="status" aria-label="État de la radio" aria-live="polite">{error ? <span id="radio-error" role="alert">{error}</span> : engineMessage && runtimeReady !== true ? engineMessage : status}</div>
     </form>
     <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="auto" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); const browserWindow = window as Window & typeof globalThis & { webkitAudioContext?: unknown }; if (browserWindow.AudioContext || browserWindow.webkitAudioContext) void ensureRadioDsp()?.resume() }} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError('Le WAV généré ne peut pas être décodé par le navigateur.'); setStatus('Lecture impossible · le moteur prépare un WAV compatible navigateur.') }} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={handleAudioLoadedMetadata} onEnded={handleAudioEnded} />
     <RadioDialog open={tagModalOpen} onClose={() => setTagModalOpen(false)} title="Explorer les sons" wide>

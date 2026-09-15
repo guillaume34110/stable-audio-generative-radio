@@ -31,16 +31,18 @@ describe('GenerativeRadio', () => {
     const readout = screen.getByLabelText('Skin sélectionné')
 
     expect(machine).toHaveAttribute('data-skin', 'white')
-    expect(readout).toHaveTextContent('Polar')
+    expect(readout).toHaveTextContent('01')
+    expect(readout).not.toHaveTextContent('Polar')
+    expect(within(screen.getByRole('group', { name: 'Skin de la machine' })).getByText('/ 12')).not.toHaveClass('machine-screen')
 
     fireEvent.click(toggle)
     expect(machine).toHaveAttribute('data-skin', 'ectoplasma')
-    expect(readout).toHaveTextContent('Ectoplasma')
+    expect(readout).toHaveTextContent('02')
     expect(window.localStorage.getItem(RADIO_SKIN_STORAGE_KEY)).toBe('ectoplasma')
 
     for (let index = 0; index < 11; index += 1) fireEvent.click(toggle)
     expect(machine).toHaveAttribute('data-skin', 'white')
-    expect(readout).toHaveTextContent('01 / 12')
+    expect(readout).toHaveTextContent('01')
     expect(window.localStorage.getItem(RADIO_SKIN_STORAGE_KEY)).toBe('white')
   })
 
@@ -338,7 +340,7 @@ describe('GenerativeRadio', () => {
     expect(continuation.keywords.split(',').map((tag: string) => tag.trim())).toEqual(['user tag alpha', 'user tag beta'])
     expect(continuation.durationSeconds).toBeGreaterThanOrEqual(120)
     expect(continuation.durationSeconds).toBeLessThanOrEqual(360)
-    expect(screen.getByRole('status')).toHaveTextContent('Morceau indépendant prêt')
+    expect(screen.getByRole('status', { name: 'État de la radio' })).toHaveTextContent('Morceau indépendant prêt')
     expect(screen.getByTestId('current-radio-track')).toHaveTextContent('01 / NOW')
     for (const label of ['TONALITÉ', 'BPM CIBLE', 'MODE', 'ÉVOLUTION', 'ÉNERGIE', 'TEXTURE', 'MODÈLE', 'SEED', 'TAGS', 'STRUCT.']) {
       expect(screen.getByTestId('current-radio-track')).toHaveTextContent(label)
@@ -536,7 +538,7 @@ describe('GenerativeRadio', () => {
       value: vi.fn(() => Promise.resolve()),
     })
     fireEvent.ended(audio)
-    expect(screen.getByRole('status')).toHaveTextContent('Fin du programme')
+    expect(screen.getByRole('status', { name: 'État de la radio' })).toHaveTextContent('Fin du programme')
 
     resolveBufferedNext(bufferedNext)
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
