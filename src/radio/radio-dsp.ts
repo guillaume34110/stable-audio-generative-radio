@@ -46,12 +46,20 @@ const dbToGain = (decibels: number): number => 10 ** (decibels / 20)
 
 const gainToDb = (gain: number): number => 20 * Math.log10(Math.max(0.000001, gain))
 
-const peakDb = (analyser: AnalyserNode): number => {
+/**
+ * Read an analyser peak without allocating a new sample array on every tick.
+ * The meter is polled several times per second, so keeping one workspace per
+ * channel avoids a steady stream of short-lived Float32Arrays and the GC
+ * churn they create while the model keeps playing.
+ */
+const createPeakReader = (analyser: AnalyserNode): (() => number) => {
   const samples = new Float32Array(analyser.fftSize)
-  analyser.getFloatTimeDomainData(samples)
-  let peak = 0
-  for (const sample of samples) peak = Math.max(peak, Math.abs(sample))
-  return gainToDb(peak)
+  return () => {
+    analyser.getFloatTimeDomainData(samples)
+    let peak = 0
+    for (const sample of samples) peak = Math.max(peak, Math.abs(sample))
+    return gainToDb(peak)
+  }
 }
 
 type AudioContextConstructor = new () => AudioContext
@@ -152,6 +160,10 @@ export const createRadioDsp = (
 
   let settings = sanitizeSettings(initialSettings)
   let disposed = false
+  const readInputPeakDb = createPeakReader(inputMeter)
+  const readOutputPeakDb = createPeakReader(outputMeter)
+  const readLeftPeakDb = createPeakReader(leftMeter)
+  const readRightPeakDb = createPeakReader(rightMeter)
 
   const applySettings = (): void => {
     if (disposed) return
@@ -194,11 +206,11 @@ export const createRadioDsp = (
 
   const readMeter = (): RadioDspMeter => {
     if (disposed) return { inputPeakDb: -60, outputPeakDb: -60, gainReductionDb: 0 }
-    const inputPeakDb = peakDb(inputMeter)
+    const inputPeakDb = readInputPeakDb()
     updateIntelligentTrim(inputPeakDb)
-    const outputPeakDb = peakDb(outputMeter)
+    const outputPeakDb = readOutputPeakDb()
     const gainReductionDb = settings.limiterEnabled ? Math.min(0, Number(limiter.reduction) || 0) : 0
-    return { inputPeakDb, outputPeakDb, gainReductionDb, leftPeakDb: peakDb(leftMeter), rightPeakDb: peakDb(rightMeter) }
+    return { inputPeakDb, outputPeakDb, gainReductionDb, leftPeakDb: readLeftPeakDb(), rightPeakDb: readRightPeakDb() }
   }
 
   const resume = async (): Promise<void> => {

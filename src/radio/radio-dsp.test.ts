@@ -100,6 +100,9 @@ describe('radio DSP monitoring chain', () => {
     const stereo = controller.readMeter()
     expect(stereo.leftPeakDb).toBeCloseTo(-6.02, 2)
     expect(stereo.rightPeakDb).toBeCloseTo(-20, 2)
+    controller.readMeter()
+    expect(context.analysers[0]!.getFloatTimeDomainData.mock.calls[0]![0])
+      .toBe(context.analysers[0]!.getFloatTimeDomainData.mock.calls[1]![0])
   })
 
   it('adapts the limiter input trim when a loud peak approaches the ceiling', () => {

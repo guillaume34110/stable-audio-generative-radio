@@ -102,11 +102,13 @@ describe('GenerativeRadio', () => {
     render(<GenerativeRadio onImportModel={onImportModel} />)
     const file = new File(['weights'], 'my-style.safetensors', { type: 'application/octet-stream' })
 
-    fireEvent.change(screen.getByLabelText('Charger un modèle Stable Audio 3'), { target: { files: [file] } })
+    const modelInput = screen.getByLabelText('Charger un modèle Stable Audio 3') as HTMLInputElement
+    fireEvent.change(modelInput, { target: { files: [file] } })
 
     await waitFor(() => expect(onImportModel).toHaveBeenCalledWith(file))
     expect(await screen.findByText('my-style.safetensors', { selector: 'option' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retirer le modèle sélectionné' })).toBeInTheDocument()
+    expect(modelInput.value).toBe('')
     expect(screen.queryByText('/Users/')).not.toBeInTheDocument()
   })
 

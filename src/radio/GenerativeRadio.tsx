@@ -642,6 +642,7 @@ export const GenerativeRadio = ({
   const [status, setStatus] = useState('Importe un modèle Stable Audio 3 ou choisis une variante INT8/INT4/INT2/INT1.')
   const [error, setError] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const modelFileInputRef = useRef<HTMLInputElement | null>(null)
   const dspRef = useRef<RadioDspController | null>(null)
   const playbackPositionRef = useRef(position)
   const keywordsRef = useRef<HTMLTextAreaElement | null>(null)
@@ -776,9 +777,12 @@ export const GenerativeRadio = ({
 
   useEffect(() => {
     const meterTimer = window.setInterval(() => {
-      if (dspRef.current) {
-        setDspMeter(dspRef.current.readMeter())
-      }
+      const audio = audioRef.current
+      // A paused/hidden player has no changing level to display. Avoid
+      // allocating meter samples and triggering a full console render while
+      // the radio is idle or the tab is in the background.
+      if (!dspRef.current || !audio || audio.paused || document.hidden) return
+      setDspMeter(dspRef.current.readMeter())
     }, 140)
     return () => window.clearInterval(meterTimer)
   }, [])
@@ -828,7 +832,14 @@ export const GenerativeRadio = ({
     if (!onImportModel) return
     try {
       const adapter = await onImportModel(file)
-      if (adapter) setLocalModel(adapter)
+      if (adapter) {
+        setLocalModel(adapter)
+        // The local engine now owns the imported model. Drop the browser's
+        // File reference and clear the input so a multi-gigabyte selection is
+        // not retained by React or the DOM after upload.
+        setSftFile(null)
+        if (modelFileInputRef.current) modelFileInputRef.current.value = ''
+      }
       setModelImportState('ready')
       setStatus(`Modèle Stable Audio 3 prêt · ${adapter?.filename ?? file.name}`)
     } catch (importError) {
@@ -842,6 +853,7 @@ export const GenerativeRadio = ({
     const model = modelOptions.find((item) => item.id === event.currentTarget.value)
     if (!model) return
     setSftFile(null)
+    if (modelFileInputRef.current) modelFileInputRef.current.value = ''
     setLocalModel(model)
     setModelVariant('fp16')
     setModelImportState('ready')
@@ -864,6 +876,7 @@ export const GenerativeRadio = ({
 
   const resetModel = (): void => {
     setSftFile(null)
+    if (modelFileInputRef.current) modelFileInputRef.current.value = ''
     setLocalModel(null)
     setModelVariant('fp16')
     setModelImportState('idle')
@@ -1245,7 +1258,7 @@ export const GenerativeRadio = ({
       <div className="machine-top-actions">
         {onBack && <MachineKey className="machine-key is-small" type="button" onClick={onBack} aria-label="Retourner au player">←</MachineKey>}
         {onReconnect && <MachineKey className="machine-key is-small" type="button" onClick={() => void reconnect()} disabled={reconnecting}>{reconnecting ? 'SCAN…' : 'ENGINE'}</MachineKey>}
-        <label className="machine-key is-small machine-import">IMPORT<input type="file" accept=".safetensors" aria-label="Charger un modèle Stable Audio 3" onChange={(event) => void handleSftFile(event)} disabled={modelImportState === 'uploading'} /></label>
+        <label className="machine-key is-small machine-import">IMPORT<input ref={modelFileInputRef} type="file" accept=".safetensors" aria-label="Charger un modèle Stable Audio 3" onChange={(event) => void handleSftFile(event)} disabled={modelImportState === 'uploading'} /></label>
         {(selectedAdapter || sftFile) && <MachineKey type="button" className="machine-key is-small" onClick={resetModel} aria-label="Retirer le modèle sélectionné">×</MachineKey>}
       </div>
     </header>
@@ -1380,7 +1393,7 @@ export const GenerativeRadio = ({
       <div className="machine-panel machine-generate-panel"><MachineKey type="submit" className="machine-key machine-generate" disabled={generating || continuationGenerating}><span aria-hidden="true">✦</span> GÉNÉRER {currentTrack ? 'LA SUITE' : 'LE MORCEAU'}</MachineKey></div>
       <div className="machine-status machine-screen" role="status" aria-label="État de la radio" aria-live="polite">{error ? <span id="radio-error" role="alert">{error}</span> : engineMessage && runtimeReady !== true ? engineMessage : status}</div>
     </form>
-    <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="auto" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); const browserWindow = window as Window & typeof globalThis & { webkitAudioContext?: unknown }; if (browserWindow.AudioContext || browserWindow.webkitAudioContext) void ensureRadioDsp()?.resume() }} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError('Le WAV généré ne peut pas être décodé par le navigateur.'); setStatus('Lecture impossible · le moteur prépare un WAV compatible navigateur.') }} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={handleAudioLoadedMetadata} onEnded={handleAudioEnded} />
+    <audio ref={audioRef} className="radio-audio" src={currentTrack?.audioUrl} preload="metadata" aria-label={currentTrack ? `Lecture de ${currentTrack.title}` : 'Lecteur Stable Audio 3'} onPlay={() => { setPlaying(true); const browserWindow = window as Window & typeof globalThis & { webkitAudioContext?: unknown }; if (browserWindow.AudioContext || browserWindow.webkitAudioContext) void ensureRadioDsp()?.resume() }} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError('Le WAV généré ne peut pas être décodé par le navigateur.'); setStatus('Lecture impossible · le moteur prépare un WAV compatible navigateur.') }} onTimeUpdate={handleAudioTimeUpdate} onLoadedMetadata={handleAudioLoadedMetadata} onEnded={handleAudioEnded} />
     <RadioDialog open={tagModalOpen} onClose={() => setTagModalOpen(false)} title="Explorer les sons" wide>
 <p className="radio-catalog-description">Choisis les sons à ajouter à ta direction. Épingle ceux que tu veux retrouver dans chaque morceau.</p>
           <div className="radio-modal-controls">
