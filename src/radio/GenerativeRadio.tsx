@@ -107,6 +107,33 @@ export const RADIO_KEYWORDS_STORAGE_KEY = 'onus-generative-radio-keywords'
 export const RADIO_NEGATIVE_PROMPT_STORAGE_KEY = 'onus-generative-radio-negative-prompt'
 export const RADIO_PHASES_STORAGE_KEY = 'onus-generative-radio-phases'
 export const RADIO_FIXED_TAGS_STORAGE_KEY = 'onus-generative-radio-fixed-tags'
+export const RADIO_SKIN_STORAGE_KEY = 'onus-generative-radio-skin'
+
+const machineSkins = [
+  { id: 'white', label: 'Polar', description: 'Polar · façade blanche, LCD bleus', surface: 'light', lcd: 'blue', pattern: 'none' },
+  { id: 'ectoplasma', label: 'Ectoplasma', description: 'Ectoplasma · violet sombre, vert acide et cyan', surface: 'dark', lcd: 'lime', pattern: 'none' },
+  { id: 'graphite', label: 'Graphite', description: 'Graphite · écrans ambrés', surface: 'dark', lcd: 'amber', pattern: 'none' },
+  { id: 'blue', label: 'Bleu', description: 'Bleu cobalt · LCD bleu glacier', surface: 'dark', lcd: 'blue', pattern: 'none' },
+  { id: 'red', label: 'Rouge', description: 'Rouge rubis · LCD bleus et accents cyan', surface: 'dark', lcd: 'blue', pattern: 'none' },
+  { id: 'green', label: 'Vert', description: 'Vert forêt · LCD menthe', surface: 'dark', lcd: 'mint', pattern: 'none' },
+  { id: 'orange', label: 'Orange', description: 'Orange · sérigraphies foncées, LCD bleus', surface: 'light', lcd: 'blue', pattern: 'none' },
+  { id: 'yellow', label: 'Jaune', description: 'Jaune · sérigraphies foncées, LCD lavande', surface: 'light', lcd: 'violet', pattern: 'none' },
+  { id: 'blueprint', label: 'Grille', description: 'Grille · quadrillage bleu et repères clairs', surface: 'dark', lcd: 'blue', pattern: 'grid' },
+  { id: 'carbon', label: 'Carbone', description: 'Carbone · tissage anthracite et LCD menthe', surface: 'dark', lcd: 'mint', pattern: 'carbon' },
+  { id: 'waves', label: 'Ondes', description: 'Ondes · courbes gravées sur une coque claire', surface: 'light', lcd: 'blue', pattern: 'waves' },
+  { id: 'dots', label: 'Trame', description: 'Trame · points sur fond perle et LCD lavande', surface: 'light', lcd: 'violet', pattern: 'dots' },
+] as const
+type MachineSkin = typeof machineSkins[number]['id']
+
+const initialMachineSkin = (): MachineSkin => {
+  if (typeof window === 'undefined') return 'white'
+  try {
+    const saved = window.localStorage.getItem(RADIO_SKIN_STORAGE_KEY)
+    return machineSkins.find((skin) => skin.id === saved)?.id ?? 'white'
+  } catch {
+    return 'white'
+  }
+}
 
 const initialKeywords = (): string => {
   if (typeof window === 'undefined') return defaultKeywords
@@ -516,12 +543,21 @@ export const GenerativeRadio = ({
 }: GenerativeRadioProps): ReactElement => {
   const machineRef = useRef<HTMLElement | null>(null)
   const [machineFit, setMachineFit] = useState({ scale: 1, height: 0 })
+  const [machineSkin, setMachineSkin] = useState(initialMachineSkin)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(RADIO_SKIN_STORAGE_KEY, machineSkin)
+    } catch {
+      // The selected finish still works when browser storage is unavailable.
+    }
+  }, [machineSkin])
 
   useLayoutEffect(() => {
     const machine = machineRef.current
     if (!machine) return
     const fit = () => {
-      const height = machine.offsetHeight
+      const height = parseFloat(getComputedStyle(machine).height) || machine.offsetHeight
       if (!height) return
       const page = machine.closest('.radio-page')
       const pageStyle = page ? getComputedStyle(page) : null
@@ -1172,9 +1208,22 @@ export const GenerativeRadio = ({
     try { await onReconnect() } catch { setError('Connexion impossible. Vérifie que ton moteur local est démarré, puis réessaie.') } finally { setReconnecting(false) }
   }
 
-  return <div className="machine-fit" style={{ height: machineFit.height ? machineFit.height * machineFit.scale : undefined }}><section ref={machineRef} style={{ transform: `scale(${machineFit.scale})` }} className={`radio-widget machine ${playing ? 'is-playing' : ''}`} aria-labelledby="radio-widget-heading" data-testid="generative-radio">
+  // Compensate the layout width so fitting the height never creates side margins.
+  const machineStyle = { '--machine-scale': machineFit.scale, width: `${100 / machineFit.scale}%`, transform: `scale(${machineFit.scale})` } as CSSProperties
+  const activeSkinIndex = machineSkins.findIndex((skin) => skin.id === machineSkin)
+  const activeSkin = machineSkins[activeSkinIndex] ?? machineSkins[1]
+
+  return <div className="machine-fit" style={{ height: machineFit.height ? machineFit.height * machineFit.scale : undefined }}><section ref={machineRef} style={machineStyle} data-skin={machineSkin} data-surface={activeSkin.surface} data-lcd={activeSkin.lcd} data-pattern={activeSkin.pattern} className={`radio-widget machine ${playing ? 'is-playing' : ''}`} aria-labelledby="radio-widget-heading" data-testid="generative-radio">
+    <div className="machine-chassis-screws" aria-hidden="true">{Array.from({ length: 6 }, (_, index) => <i key={index} />)}</div>
     <header className="machine-toprail">
-      <div className="machine-brand"><svg aria-hidden="true" viewBox="0 0 54 48"><path d="M2 27h6l5-13 6 26 7-36 7 39 6-26 5 17 4-7h4" /></svg><h1 id="radio-widget-heading">radio.studio</h1><small>GENERATIVE MUSIC WORKSTATION</small></div>
+      <div className="machine-identity">
+        <div className="machine-brand"><svg aria-hidden="true" viewBox="0 0 54 48"><path d="M2 27h6l5-13 6 26 7-36 7 39 6-26 5 17 4-7h4" /></svg><h1 id="radio-widget-heading">radio.studio</h1><small>GENERATIVE MUSIC WORKSTATION</small></div>
+        <div className="machine-skin-selector" role="group" aria-label="Skin de la machine">
+          <span className="machine-skin-label">SKIN</span>
+          <MachineKey type="button" className="machine-key machine-skin-toggle" aria-label="Skin suivant" aria-controls="machine-skin-readout" title={`Skin suivant · ${activeSkin.description}`} onClick={() => setMachineSkin((current) => machineSkins[(machineSkins.findIndex((skin) => skin.id === current) + 1) % machineSkins.length]!.id)}><span aria-hidden="true">↻</span></MachineKey>
+          <output id="machine-skin-readout" role="img" className="machine-screen machine-skin-readout" aria-label="Skin sélectionné" aria-live="polite"><span>{activeSkin.label}</span><small>{String(activeSkinIndex + 1).padStart(2, '0')} / {machineSkins.length}</small></output>
+        </div>
+      </div>
       <div className="machine-model-screen machine-screen"><select id="machine-model-variant" aria-label="Variante du modèle" value={modelVariant} onChange={selectModelVariant}>{modelVariantOptions.map((variant) => <option key={variant.id} value={variant.id} disabled={!variant.available}>{variant.label}{variant.available ? '' : ' · indisponible'}</option>)}</select><select aria-label="Modèles installés" value={selectedAdapter?.id ?? ''} disabled={quantizedModelSelected} onChange={selectInstalledModel}><option value="">{quantizedModelSelected ? 'BERLIN · FUSIONNÉ' : 'CHOISIR UN MODÈLE'}</option>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.filename}</option>)}</select>{pairingUrl ? <a href={pairingUrl}>APPAIRER LE MOTEUR ↗</a> : <span>{reconnecting ? 'CONNEXION…' : runtimeReady === false ? 'ENGINE OFFLINE' : runtimeReady === null ? 'SCANNING ENGINE' : needsModel ? 'MODEL REQUIRED' : 'LOCAL READY'}</span>}</div>
       <div className="machine-top-actions">
         {onBack && <MachineKey className="machine-key is-small" type="button" onClick={onBack} aria-label="Retourner au player">←</MachineKey>}

@@ -1,0 +1,263 @@
+/* Finishes share one physical faceplate, one LCD technology and the same controls. */
+.machine {
+ --face-tint:linear-gradient(110deg,#1d252ba8,#11191fa8 65%);
+ --face-ink:#e1e5f1; --face-muted:#b6c1cb; --panel-edge:#79838991; --panel-shadow:#0009;
+ --frame-edge:#889092; --frame-shadow:inset 0 3px 2px #c6d0d251,inset 0 -19px 3px #06090aad,0 4px 1px #090c0e,0 25px 50px #0009;
+ --cheek-base:#5e4258; --cheek-finish:linear-gradient(90deg,#1e102441,#c2a0b05c 10%,#4a29484d 30% 78%,#c99cb337 84%,#2016218f),linear-gradient(#d3b7cc99,transparent 5% 94%,#130916cc);
+ --cheek-edge:#deb6d1; --cheek-foot:#271c25; --brand-ink:#d9dceb; --brand-light:#ff7968;
+ --screen-strong:#ffce65; --screen-glow:#ffa91862; --screen-bg:#0b0a07; --screen-scan:#090905;
+ --screen-border:#604d2780; --screen-divider:#58421b; --screen-trim:#090b0c;
+ --screen-chip:#110d04; --screen-chip-edge:#c49428; --screen-inverse:#090805;
+ --eq-grid:#4b3617; --eq-border:#805c23; --eq-curve:#ffca53;
+ --led-green:#28efb6; --led-warm:#ffb440; --led-cyan:#35c5ff; --led-purple:#b477ff; --led-red:#ff7763;
+ --action-tint:brightness(1); --action-glow:#ff533940; --action-ink:#30120d; --action-disabled:#552e26;
+ --focus-ring:#ffe4ad; --silk-shadow:0 1px #07090c; --menu-bg:#171c20;
+}
+
+.machine[data-skin='white'] {
+ --paper:#dce5ea; --surface:#ebf0f2; --ink:#263b4d; --muted:#536c7e; --line:#9caebc; --accent:#1266b2; --tint:#d2e6f5;
+ --face-tint:linear-gradient(118deg,#fafcf9f2,#e7edf0ef 65%,#d7e0e5f5);
+ --face-ink:#2c4153; --face-muted:#526d82; --panel-edge:#9eacb6ad; --panel-shadow:#ffffffb8;
+ --frame-edge:#b6c3cc; --frame-shadow:inset 0 3px 2px #fffffff0,inset 0 -16px 4px #8c9da87d,0 4px 1px #788b97,0 20px 45px #23344340;
+ --cheek-base:#b2bfca; --cheek-finish:linear-gradient(90deg,#536c83,#e2eaf0 9%,#b7c5d0 28% 76%,#f4f8fa 84%,#718697),linear-gradient(#fff,#9eb1c3);
+ --cheek-edge:#f5fbff; --cheek-foot:#718496; --brand-ink:#263d53; --brand-light:#238de8;
+ --screen:#69c9ff; --screen-dim:#64a6d0; --screen-strong:#91daff; --screen-glow:#289fff52;
+ --screen-bg:#06111e; --screen-scan:#071524; --screen-border:#377eae80; --screen-divider:#264860; --screen-trim:#162734;
+ --screen-chip:#071a2a; --screen-chip-edge:#357fac; --screen-inverse:#061728;
+ --eq-grid:#1f3b50; --eq-border:#326586; --eq-curve:#73d0ff;
+ --led-green:#54e4c1; --led-warm:#399fff; --led-cyan:#70dcff; --led-purple:#9993ff; --led-red:#6eafff;
+ --action-tint:hue-rotate(200deg) saturate(1.15) brightness(1.18); --action-glow:#249bff55; --action-ink:#07233d; --action-disabled:#203d58;
+ --focus-ring:#1682d4; --silk-shadow:0 1px #ffffffa0; --menu-bg:#dce5eb;
+}
+
+.machine[data-skin='ectoplasma'] {
+ --paper:#302044; --surface:#22152f; --ink:#e8dff6; --muted:#b9a6d1; --line:#735c8f; --accent:#c7ff65; --tint:#343c2b;
+ --face-tint:linear-gradient(115deg,#503068cc,#29143bd9 58%,#331c4ad9);
+ --face-ink:#e5d9f2; --face-muted:#bca9d3; --panel-edge:#9974bf6e; --panel-shadow:#12091d99;
+ --frame-edge:#836497; --frame-shadow:inset 0 3px 2px #d1a4fb40,inset 0 -19px 3px #130a20bf,0 4px 1px #0b0712,0 25px 50px #16072299;
+ --cheek-base:#432859; --cheek-finish:linear-gradient(90deg,#21102f,#ba8ce07d 9%,#53376c 27% 76%,#b494d36e 85%,#22132e),linear-gradient(#855aa8,#2b153b);
+ --cheek-edge:#b390d0; --cheek-foot:#20102d; --brand-ink:#eee1ff; --brand-light:#c4ff5b;
+ --screen:#c4f985; --screen-dim:#95b37e; --screen-strong:#d8ffa3; --screen-glow:#a4ff474b;
+ --screen-bg:#0b1110; --screen-scan:#0d1512; --screen-border:#799c4080; --screen-divider:#3b5132; --screen-trim:#110b1a;
+ --screen-chip:#151f13; --screen-chip-edge:#779848; --screen-inverse:#132016;
+ --eq-grid:#2c402a; --eq-border:#4e7040; --eq-curve:#d0ff7b;
+ --led-green:#c4ff5b; --led-warm:#c4ff5b; --led-cyan:#54ece4; --led-purple:#d297ff; --led-red:#b198ff;
+ --action-tint:hue-rotate(90deg) saturate(1.4) brightness(1.45); --action-glow:#baff4850; --action-ink:#202e0e; --action-disabled:#405533;
+ --focus-ring:#cbff8f; --silk-shadow:0 1px #11051a; --menu-bg:#2c1c3b;
+}
+
+.machine[data-skin='blue'] {
+ --paper:#0c2032; --surface:#122c44; --ink:#e5f5ff; --muted:#9bc1d8; --line:#356782; --accent:#5bd4ff; --tint:#174364;
+ --face-tint:linear-gradient(118deg,#17456ff2,#0a2038ef 64%,#0c2c49f2);
+ --face-ink:#d9efff; --face-muted:#8eafc7; --panel-edge:#4c7895a8; --panel-shadow:#041322b8;
+ --frame-edge:#477998; --frame-shadow:inset 0 3px 2px #a9dcf34a,inset 0 -19px 3px #04111dbf,0 4px 1px #04101a,0 25px 50px #020b1499;
+ --cheek-base:#17486b; --cheek-finish:linear-gradient(90deg,#09243b,#73c9ed70 10%,#236184 30% 78%,#a6e6ff66 85%,#0b2942),linear-gradient(#4d9ac0,#123750);
+ --cheek-edge:#83d5f5; --cheek-foot:#09253d; --brand-ink:#e4f5ff; --brand-light:#5bd4ff;
+ --screen:#58cfff; --screen-dim:#6da9c5; --screen-strong:#a2e6ff; --screen-glow:#3cc9ff5c;
+ --screen-bg:#03111e; --screen-scan:#071c2e; --screen-border:#3c83ad85; --screen-divider:#25536f; --screen-trim:#142c3d;
+ --screen-chip:#071d2e; --screen-chip-edge:#4c96bd; --screen-inverse:#061723;
+ --eq-grid:#21465f; --eq-border:#3780a7; --eq-curve:#75dcff;
+ --led-green:#4bf1be; --led-warm:#ffd05f; --led-cyan:#58ddff; --led-purple:#a89aff; --led-red:#ff837d;
+ --action-tint:hue-rotate(186deg) saturate(1.22) brightness(1.24); --action-glow:#4ecbff5b; --action-ink:#041d2d; --action-disabled:#365e74;
+ --focus-ring:#63dcff; --silk-shadow:0 1px #04131f; --menu-bg:#102b43; --skin-led-color:#42caff;
+}
+
+.machine[data-skin='red'] {
+ --paper:#35121c; --surface:#471a27; --ink:#fff0f2; --muted:#d4a6af; --line:#8b4555; --accent:#ff6a78; --tint:#5c1d2c;
+ --face-tint:linear-gradient(118deg,#642034f2,#2b0c18ef 64%,#471326f2);
+ --face-ink:#ffe4e8; --face-muted:#d5aab3; --panel-edge:#a76270a8; --panel-shadow:#1e050cb8;
+ --frame-edge:#a04d60; --frame-shadow:inset 0 3px 2px #ffbccb3f,inset 0 -19px 3px #210711c7,0 4px 1px #16040a,0 25px 50px #14030a99;
+ --cheek-base:#6f2438; --cheek-finish:linear-gradient(90deg,#2b0c18,#e59aa875 10%,#7b2e48 30% 78%,#ffc1cd65 85%,#32101e),linear-gradient(#b84c6b,#4d1427);
+ --cheek-edge:#ff9cad; --cheek-foot:#2b0d19; --brand-ink:#fff1f4; --brand-light:#ff6c77;
+ --screen:#8fe2ff; --screen-dim:#6aaabc; --screen-strong:#c0f1ff; --screen-glow:#55d5ff5a;
+ --screen-bg:#100810; --screen-scan:#1b0b16; --screen-border:#a5577185; --screen-divider:#633043; --screen-trim:#321424;
+ --screen-chip:#240d18; --screen-chip-edge:#a95d72; --screen-inverse:#190811;
+ --eq-grid:#603044; --eq-border:#a75b75; --eq-curve:#8fe7ff;
+ --led-green:#5dffc7; --led-warm:#ffc658; --led-cyan:#71dcff; --led-purple:#b8a2ff; --led-red:#ff506a;
+ --action-tint:hue-rotate(338deg) saturate(1.45) brightness(1.16); --action-glow:#ff536a5f; --action-ink:#3b0914; --action-disabled:#6c3340;
+ --focus-ring:#ff9eae; --silk-shadow:0 1px #2c0713; --menu-bg:#4c1929; --skin-led-color:#ff506a;
+}
+
+.machine[data-skin='green'] {
+ --paper:#10281f; --surface:#16382b; --ink:#e7fff5; --muted:#a5c9b8; --line:#3f7860; --accent:#58f2bd; --tint:#1d523c;
+ --face-tint:linear-gradient(118deg,#1a4a38f2,#0a2419ef 64%,#123c2bf2);
+ --face-ink:#dcfaed; --face-muted:#9ec6b5; --panel-edge:#528f72a8; --panel-shadow:#04160db8;
+ --frame-edge:#4f9674; --frame-shadow:inset 0 3px 2px #b6f9d44a,inset 0 -19px 3px #04150dc7,0 4px 1px #03100a,0 25px 50px #020e0999;
+ --cheek-base:#1d5a40; --cheek-finish:linear-gradient(90deg,#092519,#8ce2bd72 10%,#2d7655 30% 78%,#c8ffe865 85%,#0c2d20),linear-gradient(#54a77f,#164d35);
+ --cheek-edge:#92ecc7; --cheek-foot:#082519; --brand-ink:#eafff5; --brand-light:#5bf2bb;
+ --screen:#82f2c4; --screen-dim:#6eaf94; --screen-strong:#b3ffdb; --screen-glow:#4dffbe58;
+ --screen-bg:#06130d; --screen-scan:#0a2117; --screen-border:#4f9b7b85; --screen-divider:#285a44; --screen-trim:#173a2a;
+ --screen-chip:#0b2419; --screen-chip-edge:#4f9e7d; --screen-inverse:#06140d;
+ --eq-grid:#285a44; --eq-border:#4c9d76; --eq-curve:#83f6c2;
+ --led-green:#58f2bd; --led-warm:#e8ff72; --led-cyan:#63e8ff; --led-purple:#bb9bff; --led-red:#ff807b;
+ --action-tint:hue-rotate(135deg) saturate(1.3) brightness(1.22); --action-glow:#54f2bd59; --action-ink:#062319; --action-disabled:#3f765f;
+ --focus-ring:#7bffc9; --silk-shadow:0 1px #03140c; --menu-bg:#173d2d; --skin-led-color:#50f3bb;
+}
+
+.machine[data-skin='orange'] {
+ --paper:#f1e2d4; --surface:#f8eee7; --ink:#3a2b24; --muted:#765e52; --line:#c6a291; --accent:#e86d2f; --tint:#f5cfb6;
+ --face-tint:linear-gradient(118deg,#fffaf2f4,#f2e1d5f2 62%,#e6c8b9f4);
+ --face-ink:#3d2b23; --face-muted:#75584a; --panel-edge:#b99583b8; --panel-shadow:#ffffffc0;
+ --frame-edge:#d3a48e; --frame-shadow:inset 0 3px 2px #ffffffea,inset 0 -16px 4px #b17e6878,0 4px 1px #9c6c58,0 20px 45px #4b2c1d45;
+ --cheek-base:#b98266; --cheek-finish:linear-gradient(90deg,#87533e,#ffe8d7 9%,#c38b70 28% 76%,#fff1e2 85%,#8d5944),linear-gradient(#efb895,#a3654c);
+ --cheek-edge:#fff0e5; --cheek-foot:#83523e; --brand-ink:#41281f; --brand-light:#ec6c39;
+ --screen:#4dbdff; --screen-dim:#578baa; --screen-strong:#84d5ff; --screen-glow:#279fff52;
+ --screen-bg:#071321; --screen-scan:#0a1d2e; --screen-border:#397eaa85; --screen-divider:#28516d; --screen-trim:#1b2e3b;
+ --screen-chip:#0b1d2b; --screen-chip-edge:#4389b3; --screen-inverse:#061523;
+ --eq-grid:#28465b; --eq-border:#3a789c; --eq-curve:#64cbff;
+ --led-green:#36d89d; --led-warm:#ff9c44; --led-cyan:#51caff; --led-purple:#987dff; --led-red:#ff7165;
+ --action-tint:hue-rotate(12deg) saturate(1.55) brightness(1.06); --action-glow:#ff762f5b; --action-ink:#4a1608; --action-disabled:#8a5036;
+ --focus-ring:#e36a32; --silk-shadow:0 1px #fff8f0; --menu-bg:#f5e4d9; --skin-led-color:#ff7f32;
+}
+
+.machine[data-skin='yellow'] {
+ --paper:#f4edc9; --surface:#fff8d8; --ink:#403c24; --muted:#776d3d; --line:#c6b76a; --accent:#e1a928; --tint:#f9e8a1;
+ --face-tint:linear-gradient(118deg,#fffdf0f4,#f4eac5f0 62%,#eadba3f4);
+ --face-ink:#413b22; --face-muted:#756b3f; --panel-edge:#b7a56ab8; --panel-shadow:#ffffffc0;
+ --frame-edge:#d4bd64; --frame-shadow:inset 0 3px 2px #ffffffea,inset 0 -16px 4px #b8a44a7d,0 4px 1px #9b8431,0 20px 45px #52431842;
+ --cheek-base:#bea451; --cheek-finish:linear-gradient(90deg,#8b7428,#fff8c9 9%,#cdb55e 28% 76%,#fffde0 85%,#8b7429),linear-gradient(#ecd77b,#aa9135);
+ --cheek-edge:#fffbd7; --cheek-foot:#8e772b; --brand-ink:#453c1d; --brand-light:#e8b62e;
+ --screen:#a997ff; --screen-dim:#837bb6; --screen-strong:#c5bcff; --screen-glow:#9b8bff55;
+ --screen-bg:#100e1c; --screen-scan:#19152c; --screen-border:#7064a785; --screen-divider:#4f477b; --screen-trim:#2d2850;
+ --screen-chip:#1d1831; --screen-chip-edge:#7b70b8; --screen-inverse:#100d1f;
+ --eq-grid:#514878; --eq-border:#8177b6; --eq-curve:#b4a8ff;
+ --led-green:#4bdba8; --led-warm:#ffd44d; --led-cyan:#4bc9ff; --led-purple:#a997ff; --led-red:#ff7a6d;
+ --action-tint:hue-rotate(46deg) saturate(1.45) brightness(1.05); --action-glow:#ffc83d5c; --action-ink:#3f2600; --action-disabled:#917334;
+ --focus-ring:#d59c1f; --silk-shadow:0 1px #fffdeb; --menu-bg:#fff4c7; --skin-led-color:#ffd447;
+}
+
+.machine[data-skin='blueprint'] {
+ --face-tint:linear-gradient(118deg,#153f63f2,#09233cef 64%,#0d3150f2); --face-ink:#deefff; --face-muted:#91b2ca; --panel-edge:#4e85a5a8; --frame-edge:#4e89ad;
+ --screen:#53c8ff; --screen-dim:#6fa9c0; --screen-strong:#9de5ff; --screen-glow:#45c7ff5c; --screen-bg:#041321; --screen-scan:#072238; --screen-border:#4084ad85; --screen-divider:#255978; --screen-trim:#142f42; --screen-chip:#092238; --screen-chip-edge:#4b9ac4; --screen-inverse:#051622;
+ --eq-grid:#2a5771; --eq-border:#4d96bd; --eq-curve:#72dcff; --cheek-base:#205777; --cheek-edge:#82cef0; --cheek-foot:#0b2b45; --brand-ink:#e5f5ff; --brand-light:#5dd6ff; --action-tint:hue-rotate(184deg) saturate(1.25) brightness(1.2); --action-glow:#48c7ff5a; --action-ink:#041e2f; --action-disabled:#3b687f; --focus-ring:#66dcff; --silk-shadow:0 1px #041522; --menu-bg:#123651; --skin-led-color:#5bcfff;
+}
+
+.machine[data-skin='carbon'] {
+ --face-tint:linear-gradient(118deg,#252a30f2,#12171bef 64%,#1b2228f2); --face-ink:#d8f8ea; --face-muted:#9ab8aa; --panel-edge:#5c766e9c; --frame-edge:#71877f;
+ --screen:#83f2c0; --screen-dim:#72af97; --screen-strong:#b4ffdb; --screen-glow:#54ffbd55; --screen-bg:#07110d; --screen-scan:#0b1c15; --screen-border:#4e927785; --screen-divider:#2c5945; --screen-trim:#1b3227; --screen-chip:#0b2118; --screen-chip-edge:#52987d; --screen-inverse:#07140d;
+ --eq-grid:#2b5744; --eq-border:#4e9376; --eq-curve:#8af6c5; --cheek-base:#394a45; --cheek-edge:#a4cfc0; --cheek-foot:#1d2c28; --brand-ink:#e7fff5; --brand-light:#67f3bd; --action-tint:hue-rotate(135deg) saturate(1.2) brightness(1.22); --action-glow:#6af4bf5c; --action-ink:#062619; --action-disabled:#496d5d; --focus-ring:#8dffd0; --silk-shadow:0 1px #07130e; --menu-bg:#202c28; --skin-led-color:#8bffcc;
+}
+
+.machine[data-skin='waves'] {
+ --face-tint:linear-gradient(118deg,#f8fbf7f2,#dcebe9ef 62%,#c9deddf4); --face-ink:#24414a; --face-muted:#50727b; --panel-edge:#87aeb1b8; --frame-edge:#9dc0c1;
+ --screen:#3fbfff; --screen-dim:#588fa6; --screen-strong:#82d9ff; --screen-glow:#33b8ff55; --screen-bg:#06131d; --screen-scan:#0b2130; --screen-border:#3c83a685; --screen-divider:#28566b; --screen-trim:#1a303a; --screen-chip:#0a202d; --screen-chip-edge:#448fb0; --screen-inverse:#061523;
+ --eq-grid:#2f5d70; --eq-border:#4a91a7; --eq-curve:#5acfff; --cheek-base:#82aeb1; --cheek-edge:#eefcf9; --cheek-foot:#557c81; --brand-ink:#284650; --brand-light:#3abfff; --action-tint:hue-rotate(185deg) saturate(1.2) brightness(1.18); --action-glow:#30bfff55; --action-ink:#052235; --action-disabled:#567886; --focus-ring:#2ba9d6; --silk-shadow:0 1px #ffffffa0; --menu-bg:#e0efed; --skin-led-color:#43c4ff;
+}
+
+.machine[data-skin='dots'] {
+ --face-tint:linear-gradient(118deg,#faf7fff2,#ebe5f5ef 62%,#dbd1e9f4); --face-ink:#382c4e; --face-muted:#6e6180; --panel-edge:#a89db8b8; --frame-edge:#b8a9c6;
+ --screen:#b28dff; --screen-dim:#8e7ab2; --screen-strong:#d0bfff; --screen-glow:#ad83ff58; --screen-bg:#100b1a; --screen-scan:#1c132d; --screen-border:#7961a285; --screen-divider:#513d73; --screen-trim:#302548; --screen-chip:#21172f; --screen-chip-edge:#8065ad; --screen-inverse:#100a19;
+ --eq-grid:#564477; --eq-border:#8b70b7; --eq-curve:#c4a8ff; --cheek-base:#9f8aad; --cheek-edge:#f4eaff; --cheek-foot:#695778; --brand-ink:#45355b; --brand-light:#ac82ff; --action-tint:hue-rotate(245deg) saturate(1.25) brightness(1.14); --action-glow:#b78bff5b; --action-ink:#24113b; --action-disabled:#806796; --focus-ring:#b18bff; --silk-shadow:0 1px #ffffffa0; --menu-bg:#ebe1f4; --skin-led-color:#b691ff;
+}
+
+.radio-page:has(.machine[data-surface='dark']) { background:#0f1820; }
+.radio-page:has(.machine[data-surface='light']) { background:#d8e2e8; }
+.radio-page:has(.machine[data-skin='white']) { background:#cdd7de; }
+.radio-page:has(.machine[data-skin='ectoplasma']) { background:#160e20; }
+.radio-page:has(.machine[data-skin='red']) { background:#210d16; }
+.radio-page:has(.machine[data-skin='green']) { background:#0b1b14; }
+.radio-page:has(.machine[data-skin='orange']) { background:#e2d4ca; }
+.radio-page:has(.machine[data-skin='yellow']) { background:#e8dfb9; }
+.radio-page:has(.machine[data-skin='waves']) { background:#d6e4e4; }
+.radio-page:has(.machine[data-skin='dots']) { background:#ded6e8; }
+.machine[data-skin] { color:var(--face-ink); background-image:var(--face-tint),url('/assets/hardware/graphite-v1.png'); border-color:var(--frame-edge); border-inline-color:var(--cheek-base); box-shadow:var(--frame-shadow); }
+.machine[data-skin]::before,.machine[data-skin]::after { background:var(--cheek-finish); border-top-color:var(--cheek-edge); border-bottom-color:var(--cheek-foot); }
+.machine[data-skin] :focus-visible { outline-color:var(--focus-ring); }
+.machine[data-skin] ::selection { background:var(--screen); color:var(--screen-inverse); }
+.machine[data-skin] * { scrollbar-color:var(--screen-divider) transparent; }
+.machine[data-skin] .machine-panel,.machine[data-skin] .machine-dsp-strip { border-color:var(--panel-edge); box-shadow:inset 0 1px var(--panel-shadow); }
+.machine[data-skin] .machine-silkscreen,.machine[data-skin] .machine-knob-label { color:var(--face-ink); text-shadow:var(--silk-shadow); }
+.machine[data-skin] .machine-brand h1 { color:var(--brand-ink); }
+.machine[data-skin] .machine-brand > svg { stroke:var(--brand-light); filter:drop-shadow(0 0 7px color-mix(in srgb,var(--brand-light) 28%,transparent)); }
+.machine[data-skin] .machine-phase { color:var(--face-ink); }
+.machine[data-skin] .machine-phase[aria-pressed=true] .machine-phase-label { color:var(--accent); }
+.machine[data-skin] .machine-meter-scale { color:var(--face-muted); }
+.machine[data-skin] .machine-arrangement-actions select { color:var(--face-ink); background:var(--menu-bg); border-color:var(--panel-edge); }
+
+/* Every readout uses the same LCD colours, scan lines and glass. */
+.machine[data-skin] .machine-screen { color:var(--screen); text-shadow:0 0 6px var(--screen-glow); border-color:var(--screen-trim); background:linear-gradient(112deg,#ffffff05,transparent 45%),repeating-linear-gradient(0deg,var(--screen-bg) 0 2px,var(--screen-scan) 2px 3px); box-shadow:inset 0 0 0 1px var(--screen-border),inset 2px 3px 5px #000,0 1px 0 #9c9f9680,0 -1px 0 #070809; }
+.machine[data-skin] .machine-model-screen option,.machine[data-skin] .machine-arrangement-actions option { color:var(--screen); background:var(--screen-bg); }
+.machine[data-skin] .machine-prompt-screen textarea::placeholder { color:var(--screen-dim); }
+.machine[data-skin] .machine-chip-line button { border-color:var(--screen-chip-edge); background:var(--screen-chip); }
+.machine[data-skin] .machine-chip-line button[aria-pressed=true] { color:var(--screen-inverse); background:var(--screen); box-shadow:0 0 8px var(--screen-glow); }
+.machine[data-skin] .machine-key[aria-pressed=true] { color:var(--screen); }
+.machine[data-skin] .machine-track-screen h3 { color:var(--screen-strong); }
+.machine[data-skin] .machine-progress { border-color:var(--screen-divider); background:var(--screen-chip); }
+.machine[data-skin] .machine-progress i { background:repeating-linear-gradient(90deg,var(--screen) 0 4px,transparent 4px 6px); }
+.machine[data-skin] .machine-data-grid { border-color:var(--screen-divider); }
+.machine[data-skin] .eq-grid { stroke:var(--eq-grid); }
+.machine[data-skin] .eq-plot-border { stroke:var(--eq-border); }
+.machine[data-skin] .eq-zero { stroke:var(--screen-divider); }
+.machine[data-skin] .eq-axis { fill:var(--screen-dim); }
+.machine[data-skin] .eq-curve { stroke:var(--eq-curve); filter:drop-shadow(0 0 3px var(--screen-glow)); }
+
+.machine[data-skin] .machine-knob { --led:var(--led-green); }
+.machine[data-skin] .machine-knob.is-orange { --led:var(--led-warm); }
+.machine[data-skin] .machine-knob.is-cyan { --led:var(--led-cyan); }
+.machine[data-skin] .machine-knob.is-pink { --led:var(--led-purple); }
+.machine[data-skin] .machine-knob.is-red { --led:var(--led-red); }
+.machine[data-skin] .machine-key.is-selected,.machine[data-skin] .machine-generate { color:var(--action-ink); text-shadow:0 1px #ffffff35; }
+.machine[data-skin] .machine-generate:disabled { color:var(--action-disabled); }
+/* Tint the artwork itself so pressing a key only moves its cap. */
+.machine[data-skin] .machine-button-skin image { filter:var(--action-tint); }
+.machine[data-skin] .machine-key.is-selected::before { filter:var(--action-tint) drop-shadow(0 0 6px var(--action-glow)) drop-shadow(0 3px 1px #000); }
+.machine[data-skin] .machine-key.is-selected::after { filter:var(--action-tint) brightness(var(--cap-brightness,1)); }
+.machine[data-skin] .machine-key.is-selected:hover:not(:active) { --cap-brightness:1.12; }
+.machine[data-skin] .machine-key.is-selected:active { --cap-brightness:.83; }
+.machine[data-pattern='grid'] {
+ background-image:linear-gradient(90deg,#62cfff12 1px,transparent 1px),linear-gradient(#62cfff12 1px,transparent 1px),var(--face-tint),url('/assets/hardware/graphite-v1.png');
+ background-size:32px 32px,32px 32px,100% 100%,cover; background-repeat:repeat,repeat,no-repeat,repeat;
+}
+.machine[data-pattern='carbon'] {
+ background-image:repeating-linear-gradient(135deg,#ffffff0b 0 1px,transparent 1px 4px),repeating-linear-gradient(45deg,#0000001a 0 1px,transparent 1px 4px),var(--face-tint),url('/assets/hardware/graphite-v1.png');
+ background-size:8px 8px,8px 8px,100% 100%,cover; background-repeat:repeat,repeat,no-repeat,repeat;
+}
+.machine[data-pattern='waves'] {
+ background-image:repeating-radial-gradient(ellipse at -10% 18%,transparent 0 17px,#2f83951d 18px 19px,transparent 20px 37px),var(--face-tint),url('/assets/hardware/graphite-v1.png');
+ background-size:220px 110px,100% 100%,cover; background-repeat:repeat,no-repeat,repeat;
+}
+.machine[data-pattern='dots'] {
+ background-image:radial-gradient(#7059a82b 1px,transparent 1.4px),var(--face-tint),url('/assets/hardware/graphite-v1.png');
+ background-size:14px 14px,100% 100%,cover; background-repeat:repeat,no-repeat,repeat;
+}
+.machine[data-skin='white'] .machine-phase:nth-child(3n+1) i { --crop-x:361; --crop-y:358; --crop-w:228; --crop-h:226; }
+.machine[data-skin='white'] .machine-phase:nth-child(3n+2) i { --crop-x:52; --crop-y:358; --crop-w:228; --crop-h:226; }
+.machine[data-skin='white'] .machine-phase:nth-child(3n) i { --crop-x:976; --crop-y:358; --crop-w:228; --crop-h:226; }
+.machine[data-skin='ectoplasma'] .machine-phase:nth-child(3n+1) i { --crop-x:976; --crop-y:358; --crop-w:228; --crop-h:226; }
+.machine[data-skin='ectoplasma'] .machine-phase:nth-child(3n+2) i { --crop-x:52; --crop-y:358; --crop-w:228; --crop-h:226; }
+.machine[data-skin='ectoplasma'] .machine-phase:nth-child(3n) i { --crop-x:361; --crop-y:358; --crop-w:228; --crop-h:226; }
+
+.machine-identity { display:grid; gap:5px; min-width:0; padding-bottom:5px; }
+.machine-skin-selector { display:flex; align-items:center; gap:7px; min-width:0; }
+.machine-skin-label { margin-right:3px; font:500 9px var(--silk); letter-spacing:.15em; color:var(--face-muted); }
+.machine[data-skin] .machine-skin-toggle {
+ --skin-led:var(--skin-led-color, var(--screen)); --cap-left:15%; --cap-right:15%; --cap-top:17%; --cap-bottom:23%;
+ position:relative; flex:0 0 32px; width:32px; height:27px; min-height:27px; padding:0; border:1px solid #05080b; border-radius:4px; color:transparent; background:linear-gradient(#020406,#020406) center / 80% 71% no-repeat; box-shadow:inset 0 1px #ffffff2b,0 2px 2px #000a; filter:drop-shadow(0 0 4px var(--skin-led));
+ }
+.machine[data-skin] .machine-skin-toggle::before {
+ content:''; position:absolute; z-index:-1; inset:-1px; pointer-events:none; border-radius:5px; background:linear-gradient(145deg,#596773,#111a21 36%,#05080a 70%,#34404a); box-shadow:inset 0 1px #ffffff5c,inset 0 -2px #000b,0 1px 1px #000b; clip-path:none; filter:drop-shadow(1px 3px 2px #0009);
+ }
+.machine[data-skin] .machine-skin-toggle::after {
+ content:''; position:absolute; z-index:0; inset:5px 6px 7px; pointer-events:none; border-radius:2px; background:radial-gradient(circle at 42% 34%,#ffffff 0 8%,var(--skin-led) 25%,color-mix(in srgb,var(--skin-led) 72%,#000) 74%,#10151a 100%); box-shadow:inset 0 1px #ffffffc4,0 0 4px var(--skin-led),0 0 9px color-mix(in srgb,var(--skin-led) 65%,transparent); clip-path:none; transform-origin:50% 48%; transition:transform 65ms ease-out,filter 65ms ease-out;
+ }
+.machine[data-skin] .machine-skin-toggle .machine-key-label { position:relative; z-index:1; width:100%; height:100%; font-size:0; color:transparent; }
+.machine[data-skin] .machine-skin-toggle:active:not(:disabled)::after { transform:translateY(1.5px) scale(.94); filter:brightness(.82); }
+.machine[data-skin] .machine-skin-toggle:active:not(:disabled) .machine-key-label { transform:none; }
+.machine[data-skin] .machine-skin-toggle:hover:not(:active):not(:disabled)::after { filter:brightness(1.14); }
+.machine[data-skin] .machine-skin-toggle:disabled { filter:brightness(.65); }
+.machine-skin-readout { display:flex; align-items:center; justify-content:space-between; gap:7px; min-width:0; width:118px; height:27px; padding:2px 7px; border-width:3px; }
+.machine-skin-readout span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 13px/1 var(--display); }
+.machine-skin-readout small { flex-shrink:0; color:var(--screen-dim); font:500 9px/1 var(--display); letter-spacing:.05em; }
+
+/* The sound catalogue belongs to the same finish as the front panel. */
+.machine[data-skin] .radio-dialog.is-wide { background-image:var(--face-tint),url('/assets/hardware/graphite-v1.png'); background-size:100% 100%,560px; background-repeat:no-repeat,repeat; border-color:var(--panel-edge); }
+.machine[data-skin] .radio-modal-search { color:var(--screen); background:var(--screen-bg); border-color:var(--screen-trim); box-shadow:inset 0 0 0 1px var(--screen-border); }
+.machine[data-skin] .radio-modal-pin-btn.is-pinned { color:var(--screen); background:var(--screen-chip); }
+.machine[data-skin] .radio-modal-done-btn { color:var(--screen-inverse); background:var(--screen); }
+.machine[data-skin] .radio-modal-footer { background:var(--surface); }
+
+@media (max-width:820px) {
+ .machine-identity { grid-column:1/-1; gap:9px; }
+ .machine-skin-selector { gap:6px; }
+ .machine-skin-readout { width:128px; }
+}

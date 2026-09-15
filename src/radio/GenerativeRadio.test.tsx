@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { GenerativeRadio, RADIO_KEYWORDS_STORAGE_KEY, RADIO_FIXED_TAGS_STORAGE_KEY } from './GenerativeRadio'
+import { GenerativeRadio, RADIO_KEYWORDS_STORAGE_KEY, RADIO_FIXED_TAGS_STORAGE_KEY, RADIO_SKIN_STORAGE_KEY } from './GenerativeRadio'
 
 const startRadio = () => fireEvent.click(screen.getByRole('button', { name: 'Démarrer la radio' }))
 
@@ -21,6 +21,27 @@ describe('GenerativeRadio', () => {
     expect(screen.getByRole('combobox', { name: 'Variante du modèle' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /Ta direction sonore/ })).toHaveValue('minimal, minimal techno')
     expect(screen.getByRole('slider', { name: /^Influence$/ })).toHaveValue('100')
+  })
+
+  it('cycles the physical skin LED and remembers the selected finish', () => {
+    render(<GenerativeRadio />)
+
+    const machine = screen.getByTestId('generative-radio')
+    const toggle = screen.getByRole('button', { name: 'Skin suivant' })
+    const readout = screen.getByLabelText('Skin sélectionné')
+
+    expect(machine).toHaveAttribute('data-skin', 'white')
+    expect(readout).toHaveTextContent('Polar')
+
+    fireEvent.click(toggle)
+    expect(machine).toHaveAttribute('data-skin', 'ectoplasma')
+    expect(readout).toHaveTextContent('Ectoplasma')
+    expect(window.localStorage.getItem(RADIO_SKIN_STORAGE_KEY)).toBe('ectoplasma')
+
+    for (let index = 0; index < 11; index += 1) fireEvent.click(toggle)
+    expect(machine).toHaveAttribute('data-skin', 'white')
+    expect(readout).toHaveTextContent('01 / 12')
+    expect(window.localStorage.getItem(RADIO_SKIN_STORAGE_KEY)).toBe('white')
   })
 
   it('focuses inline model setup from the primary action without losing the written direction', () => {

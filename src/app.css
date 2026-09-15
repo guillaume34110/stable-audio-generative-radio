@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&family=Manrope:wght@600;700;800&display=swap');
+@import './radio/machine-skins.css';
 :root {
  color-scheme: dark; --paper:#171c20; --surface:#20262b; --ink:#e6eaf2; --muted:#9ba6b2; --line:#4b555d; --accent:#ffba3b; --tint:#463219;
  --screen:#ffc13b; --screen-dim:#b88b37; --silk:'Barlow Condensed','Arial Narrow',sans-serif; --display:'Rajdhani','Arial Narrow',monospace;
@@ -15,15 +16,19 @@ a { color:inherit; }
 [hidden] { display:none!important; }
 svg { display:block; }
 ::selection { background:#805823; color:#fff5d1; }
-.radio-page { min-height:100dvh; padding:8px; background:radial-gradient(ellipse at 50% 20%,#313537,#131719 75%); }
-.radio-page-main { width:min(1550px,100%); margin:0 auto; }
+.radio-page { min-height:100dvh; padding:4px; background:radial-gradient(ellipse at 50% 20%,#313537,#131719 75%); }
+.radio-page-main { width:100%; }
 .machine {
- container-type:inline-size; position:relative; padding:20px 23px 20px; border:1px solid #889092; border-left:20px solid #5e4258; border-right:20px solid #5e4258; border-radius:8px;
+ --cheek-width:calc(clamp(26px,2.2vw,36px) / var(--machine-scale,1));
+ container-type:inline-size; position:relative; padding:20px 23px; border:1px solid #889092; border-inline:var(--cheek-width) solid #5e4258; border-radius:8px;
  background:linear-gradient(110deg,#1d252ba8,#11191fa8 65%),url('/assets/hardware/graphite-v1.png') center / cover no-repeat;
  box-shadow:inset 0 3px 2px #c6d0d251,inset 0 -19px 3px #06090aad,0 4px 1px #090c0e,0 25px 50px #0009;
 }
-.machine::before,.machine::after { content:''; position:absolute; top:-1px; bottom:-1px; width:19px; pointer-events:none; background:linear-gradient(90deg,#1e102441,#c2a0b05c 10%,#4a29484d 30% 78%,#c99cb337 84%,#2016218f),linear-gradient(#d3b7cc99,transparent 5% 94%,#130916cc); border-top:1px solid #deb6d1; border-bottom:3px solid #271c25; }
-.machine::before { left:-20px; }.machine::after { right:-20px; transform:scaleX(-1); }
+.machine::before,.machine::after { content:''; position:absolute; top:-1px; bottom:-1px; width:calc(var(--cheek-width) - 1px); pointer-events:none; background:linear-gradient(90deg,#1e102441,#c2a0b05c 10%,#4a29484d 30% 78%,#c99cb337 84%,#2016218f),linear-gradient(#d3b7cc99,transparent 5% 94%,#130916cc); border-top:1px solid #deb6d1; border-bottom:3px solid #271c25; }
+.machine::before { left:calc(-1 * var(--cheek-width)); }.machine::after { right:calc(-1 * var(--cheek-width)); transform:scaleX(-1); }
+/* The six fasteners attach the single faceplate to the chassis perimeter. */
+.machine-chassis-screws { position:absolute; inset:4px; display:grid; grid-template-columns:repeat(2,14px); grid-template-rows:repeat(3,14px); justify-content:space-between; align-content:space-between; pointer-events:none; }
+.machine-chassis-screws i { background-image:var(--atlas); background-size:760% 738%; background-position:36.9% 63.7%; }
 .machine-toprail { min-height:66px; display:grid; grid-template-columns:minmax(0,1fr) 245px auto; gap:15px; align-items:center; padding:0 6px 7px; }
 .machine-brand { display:flex; align-items:center; gap:15px; }
 .machine-brand > svg { width:48px; height:45px; flex-shrink:0; fill:none; stroke:#ff7968; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 0 7px #ff4a3544); }
@@ -39,8 +44,7 @@ svg { display:block; }
 .machine-import input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
 .machine-console { display:grid; grid-template-columns:repeat(14,minmax(0,1fr)); grid-template-rows:150px 177px 218px 178px 94px auto; gap:8px; }
 .machine-panel { position:relative; min-width:0; margin:0; padding:9px 13px 11px; border:1px solid #79838991; border-radius:5px; box-shadow:inset 0 1px #0009; }
-.machine-silkscreen { display:flex; align-items:center; justify-content:space-between; gap:8px; position:relative; margin:0 0 8px; padding-left:25px; min-height:20px; color:#e1e5f1; font:500 clamp(12px,1.15cqw,17px)/1 var(--silk); letter-spacing:.1em; text-transform:uppercase; text-shadow:0 1px #07090c; }
-.machine-silkscreen::before { content:''; position:absolute; width:18px; height:18px; left:0; top:1px; background-image:var(--atlas); background-size:760% 738%; background-position:36.9% 63.7%; }
+.machine-silkscreen { display:flex; align-items:center; justify-content:space-between; gap:8px; position:relative; margin:0 0 8px; min-height:20px; color:#e1e5f1; font:500 clamp(12px,1.15cqw,17px)/1 var(--silk); letter-spacing:.1em; text-transform:uppercase; text-shadow:0 1px #07090c; }
 .machine-silkscreen > button { font:500 11px var(--silk); letter-spacing:.06em; min-height:22px; }
 .machine-silkscreen > span:not(.machine-screen):not(.machine-arrangement-actions) { font-size:12px; }
 .machine-direction { grid-column:1/6; grid-row:1; padding-block:6px; }.machine-direction .machine-silkscreen { margin-bottom:4px; }.machine-structure-panel { grid-column:5/15; grid-row:1; }
@@ -172,9 +176,9 @@ svg { display:block; }
 .machine-generate-panel { display:flex; align-items:center; justify-content:center; padding:9px 17px; }
 .machine-generate { width:100%; height:77px; font-size:clamp(17px,1.6cqw,24px); gap:15px; letter-spacing:.03em; }.machine-generate .machine-key-label > span { font-size:40px; font-weight:400; }.machine-generate:disabled { color:#552e26; }
 .machine-generate::before { display:none; }
-.machine-button-skin { position:absolute; z-index:-1; inset:0; display:grid; grid-template-columns:24px minmax(0,1fr) 24px; pointer-events:none; filter:drop-shadow(0 0 5px #ff533940) drop-shadow(0 3px 2px #000); }
+.machine-button-skin { position:absolute; z-index:-1; inset:0; display:grid; grid-template-columns:24px minmax(0,1fr) 24px; pointer-events:none; filter:drop-shadow(0 0 5px var(--action-glow)) drop-shadow(0 3px 2px #000); }
 .machine-button-skin svg { display:block; width:100%; height:100%; overflow:hidden; }
-.machine-generate:hover:not(:active):not(:disabled) .machine-button-cap { filter:brightness(1.12) drop-shadow(0 0 7px #ff533950); }
+.machine-generate:hover:not(:active):not(:disabled) .machine-button-cap { filter:brightness(1.12) drop-shadow(0 0 7px var(--action-glow)); }
 .machine-generate:disabled .machine-button-skin { filter:brightness(.65); }
 .machine-status { min-height:24px; padding:2px 9px; font:500 12px/1.25 var(--display); }.radio-audio { display:none; }
 
@@ -211,7 +215,7 @@ svg { display:block; }
 .machine-generate { --cap-left:14px; --cap-right:14px; --cap-top:14%; --cap-bottom:18%; background:none; }
 .machine-generate::after { display:none; }
 .machine-generate:active:not(:disabled) .machine-button-cap { transform:translateY(1.5px) scaleY(.975); }
-.machine-generate:active:not(:disabled) .machine-button-frame { transform:none; filter:drop-shadow(0 0 5px #ff533940) drop-shadow(0 3px 2px #000); }
+.machine-generate:active:not(:disabled) .machine-button-frame { transform:none; filter:drop-shadow(0 0 5px var(--action-glow)) drop-shadow(0 3px 2px #000); }
 .machine-phase { display:flex; flex-direction:column; align-items:center; --cap-left:11%; --cap-right:11%; --cap-top:12%; --cap-bottom:17%; }
 .machine-pad-art { display:block; position:relative; width:100%; aspect-ratio:1; background:linear-gradient(#040408,#040408) center / 78% 72% no-repeat; }
 .machine-phase i { position:absolute; inset:0; height:100%; }
@@ -242,7 +246,7 @@ svg { display:block; }
  --crop-x:707; --crop-y:721; --crop-w:153; --crop-h:116; filter:drop-shadow(0 0 3px #21ffc0);
 }
 .machine-fit { overflow:clip; }
-.machine { transform-origin:top center; }
+.machine { transform-origin:top left; }
 .machine-left-stack { grid-column:1/5; grid-row:1/5; display:grid; grid-template-rows:minmax(150px,1fr) minmax(170px,1.1fr) 220px 80px; gap:8px; min-height:0; }
 .machine-left-stack > .machine-panel { grid-column:auto; grid-row:auto; }
 .machine-left-stack .machine-direction,.machine-left-stack .machine-exclude { display:flex; flex-direction:column; }
@@ -257,10 +261,10 @@ svg { display:block; }
 .machine-left-stack .machine-evolution .machine-silkscreen { margin-bottom:7px; }
 
 @media (max-width:1150px) and (min-width:821px) {
- .radio-page { padding:10px; }.machine { padding:13px 13px 24px; border-left-width:15px; border-right-width:15px; }.machine::before { left:-15px; width:14px; }.machine::after { right:-15px; width:14px; }
+ .machine { padding:20px 22px 24px; }
  .machine-toprail { grid-template-columns:minmax(0,1fr) 200px 60px; gap:10px; }.machine-brand { gap:10px; }.machine-brand small { font-size:8px; margin-left:0; max-width:115px; white-space:normal; line-height:1.6; }
  .machine-console { grid-template-rows:144px 163px 212px 177px 88px auto; gap:6px; }.machine-panel { padding:7px 8px 8px; }
- .machine-silkscreen { padding-left:20px; letter-spacing:.055em; }.machine-silkscreen::before { width:15px; height:15px; }
+ .machine-silkscreen { letter-spacing:.055em; }
  .machine-tag-display-row { grid-template-columns:minmax(0,1fr) 42px; gap:5px; }.machine-tag-encoder .machine-knob-control { width:42px; }
  .machine-tag-actions { padding-right:0; gap:4px; }.machine-key { min-height:29px; padding-inline:4px; }.machine-phase-keys { padding-inline:0; }.machine-phase { flex-basis:58px; }.machine-phase .machine-phase-label { font-size:11px; }
  .machine-knob-value { min-width:53px; padding-inline:3px; }.machine-eq-top { grid-template-columns:minmax(0,1fr) 58px; gap:7px; height:150px; }.machine-stereo-meter { gap:4px; }.machine-meter-channel { width:15px; }
@@ -274,7 +278,7 @@ svg { display:block; }
 }
 @media (max-width:820px) {
  .machine { background-size:auto,760px auto; background-repeat:no-repeat,repeat; }
- .radio-page { padding:8px; }.machine { padding:12px 12px 25px; border-left-width:12px; border-right-width:12px; }.machine::before { left:-12px; width:11px; }.machine::after { right:-12px; width:11px; }
+ .machine { --cheek-width:18px; padding:20px 20px 25px; }
  .machine-toprail { grid-template-columns:minmax(0,1fr) 70px; padding:0 0 12px; gap:10px; }.machine-brand { grid-column:1/-1; gap:10px; }.machine-brand h1 { font-size:28px; }.machine-brand > span { font-size:40px; }.machine-brand small { font-size:8px; margin-left:auto; max-width:130px; white-space:normal; line-height:1.5; }
  .machine-model-screen { width:100%; }.machine-top-actions { display:flex; flex-direction:column; gap:5px; }.machine-top-actions .machine-key { width:100%; min-height:28px; }
  .machine-console { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-rows:none; gap:9px; }.machine-left-stack { display:contents; }.machine-left-stack > .machine-panel { grid-column:1/-1; grid-row:auto; }.machine-console > .machine-panel,.machine-console > .machine-status { grid-column:1/-1; grid-row:auto; }.machine-panel { padding:10px 12px; }
