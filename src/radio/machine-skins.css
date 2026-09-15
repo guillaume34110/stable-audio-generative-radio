@@ -178,8 +178,7 @@
 .machine[data-skin] .machine-screen { color:var(--screen); text-shadow:0 0 6px var(--screen-glow); border-color:var(--screen-trim); background:linear-gradient(112deg,#ffffff05,transparent 45%),repeating-linear-gradient(0deg,var(--screen-bg) 0 2px,var(--screen-scan) 2px 3px); box-shadow:inset 0 0 0 1px var(--screen-border),inset 2px 3px 5px #000,0 1px 0 #9c9f9680,0 -1px 0 #070809; }
 .machine[data-skin] .machine-model-screen option,.machine[data-skin] .machine-arrangement-actions option { color:var(--screen); background:var(--screen-bg); }
 .machine[data-skin] .machine-prompt-screen textarea::placeholder { color:var(--screen-dim); }
-.machine[data-skin] .machine-chip-line button { border-color:var(--screen-chip-edge); background:var(--screen-chip); }
-.machine[data-skin] .machine-chip-line button[aria-pressed=true] { color:var(--screen-inverse); background:var(--screen); box-shadow:0 0 8px var(--screen-glow); }
+
 .machine[data-skin] .machine-key[aria-pressed=true] { color:var(--screen); }
 .machine[data-skin] .machine-track-screen h3 { color:var(--screen-strong); }
 .machine[data-skin] .machine-progress { border-color:var(--screen-divider); background:var(--screen-chip); }
@@ -252,7 +251,7 @@
 /* The sound catalogue belongs to the same finish as the front panel. */
 .machine[data-skin] .radio-dialog.is-wide { background-image:var(--face-tint),url('/assets/hardware/graphite-v1.png'); background-size:100% 100%,560px; background-repeat:no-repeat,repeat; border-color:var(--panel-edge); }
 .machine[data-skin] .radio-modal-search { color:var(--screen); background:var(--screen-bg); border-color:var(--screen-trim); box-shadow:inset 0 0 0 1px var(--screen-border); }
-.machine[data-skin] .radio-modal-pin-btn.is-pinned { color:var(--screen); background:var(--screen-chip); }
+
 .machine[data-skin] .radio-modal-done-btn { color:var(--screen-inverse); background:var(--screen); }
 .machine[data-skin] .radio-modal-footer { background:var(--surface); }
 

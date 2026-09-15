@@ -14,22 +14,28 @@ Product evidence: README.md, the Stable Audio API client and the DSP/generation 
 
 ## Main flow
 
-Write a comma-separated direction, choose a local model, generate and play. Missing setup focuses the model controls and displays an actionable message without losing the direction. Empty directions receive an inline error and focus. Valid generation requests autoplay; blocked playback remains resumable through Play.
+Write a free-text direction, choose a local model, generate and play. Missing setup focuses the model controls and displays an actionable message without losing the direction. Empty directions receive an inline error and focus. Valid generation requests autoplay; blocked playback remains resumable through Play.
 
-Play, Pause, Stop, restart and next-track actions use separate physical keys. A native range with a physical fader cap seeks through the current track.
+Play, Pause, Stop, restart and next-track actions use separate physical keys. A native range with a physical fader cap seeks through the current track. An icon-only download key on the current track saves its original WAV. It remains disabled until audio is available and does not alter playback or the generation queue.
 
 ## Editing and persistence
 
-Direction and Exclude support tag selection, addition, removal and ordering. Positive tags can be pinned. Structure pads select a phase; dedicated buttons move or remove it. Evolution and the generation essentials remain visible.
+Direction and Exclude are fixed-size LCD text areas. Neither field is split into tags, and neither has a rotary selector or an editing-button row. Direction has 25% more screen height than Exclude. Generation sits below Exclude; the current and next track readouts sit together. Structure pads select a phase; dedicated buttons move or remove it.
 
-Composition settings affect upcoming audio. Monitoring DSP settings affect playback immediately and leave the generated WAV intact. Existing stored tags and model selection retain their persistence behavior. No additional save action is needed.
+Composition settings affect upcoming audio. Monitoring DSP settings affect playback immediately and leave the generated WAV intact. Existing text and model selections retain their persistence behavior. Legacy pinned phrases are appended to the visible direction once, without duplicating phrases already present. Empty exclusions stay empty after a reload. No additional save action is needed.
 
 ## Async behavior and errors
 
-Generation controls prevent duplicate starts. Import and reconnect failures appear on the facade; a failed retry retains the unavailable state. Changes to generation settings invalidate stale queued audio, including fixed tags and diffusion parameters.
+Generation controls prevent duplicate starts. Import and reconnect failures appear on the facade; a failed retry retains the unavailable state. Changes to composition and diffusion settings wait for the next available generation slot. They do not cancel an in-flight request, discard a buffered track or interrupt playback. Each request snapshots the complete direction and exclusions; no words are sampled or reordered.
 
 The local engine pairing token is captured from the redirect fragment, stored locally and removed from the URL. Paired requests go directly to the loopback engine with the token header.
 
+## Prompt contract
+
+The sound catalog supplies optional English vocabulary for the SA3 family. Descriptions and defaults must not refer to a personal training dataset or imply that musical suggestions are guaranteed control tokens. The [official SA3 guide](https://kb.stability.ai/knowledge-base/stable-audio-3-prompt-guide) is the reference for optional TrackType, Format and Genre fields.
+
+The API receives the Direction text unchanged, followed only by a natural-language sentence when structure phases are selected. Exclusions stay in the separate negative_prompt field, and BPM stays in the numeric request field. Suggestions append editable text; they never toggle or remove part of an existing sentence.
+
 ## Verification limits
 
-Component tests use jsdom and media stubs; they validate application state rather than decoded audio or complete native browser behavior. Browser checks cover the rendered facade, physical press/focus feedback, local editing and responsive geometry. Full generation/playback E2E has not been verified while the local engine is unpaired.
+Component tests use jsdom and media stubs; they validate application state rather than decoded audio or complete native browser behavior. Browser checks cover the rendered facade, physical press/focus feedback, local editing and responsive geometry. API serialization tests use a simulated local engine. They verify full prompt and negative-prompt transmission, not audio quality or runtime support for every SA3 model. Full model-generation/playback E2E is separate from these checks.

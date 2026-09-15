@@ -1,4 +1,4 @@
-export type TagCategory = 'prompt' | 'style' | 'instruments' | 'rhythm' | 'mood' | 'production' | 'phases'
+export type TagCategory = 'prompt' | 'style' | 'instruments' | 'rhythm' | 'mood' | 'production' | 'sound' | 'phases'
 
 export type AudioTag = {
   id: string
@@ -11,209 +11,199 @@ export type TrackPhase = {
   id: string
   label: string
   shortCode: string
-  defaultEnergy: number // 0 to 100
   description: string
 }
 
 export const CATEGORY_LABELS: Record<TagCategory, string> = {
-  prompt: 'Prompt & marqueurs SA3',
-  style: 'Styles & Genres',
-  instruments: 'Instruments & Synthèse',
-  rhythm: 'Rythmique & Drums',
-  mood: 'Ambiance & Mood',
-  production: 'Production & Mix',
-  phases: 'Structure interne On Us',
+  prompt: 'Format SA3',
+  style: 'Styles & genres',
+  instruments: 'Instruments',
+  rhythm: 'Rythme & jeu',
+  mood: 'Ambiance',
+  production: 'Production & espace',
+  sound: 'Sons & effets',
+  phases: 'Structure',
 }
 
-export const STABLE_AUDIO_TAG_CATALOG_NOTE = 'Stable Audio 3 ne possède pas de dictionnaire fermé : ce catalogue garde uniquement des formulations de prompt documentées par le guide SA3, présentes dans le vocabulaire du modèle Berlin ou nécessaires à sa recette de techno. Ce sont des suggestions, pas des commandes garanties ; le champ reste libre et illimité.'
+export const STABLE_AUDIO_PROMPT_GUIDE_URL = 'https://kb.stability.ai/knowledge-base/stable-audio-3-prompt-guide'
+
+export const STABLE_AUDIO_TAG_CATALOG_NOTE = 'Stable Audio 3 se décrit en langage naturel : style, instruments, rythme, ambiance et production. Les suggestions en anglais complètent ton texte, qui est conservé en entier. TrackType, Format et Genre sont des indications facultatives documentées ; les autres propositions sont du vocabulaire musical libre. La famille SA3 privilégie l’instrumental et les textures vocales sans paroles intelligibles. Le résultat dépend du modèle chargé.'
 
 export const TRACK_PHASES: readonly TrackPhase[] = [
-  {
-    id: 'intro',
-    label: 'Intro',
-    shortCode: 'INT',
-    defaultEnergy: 25,
-    description: 'Ouverture atmosphérique, montée progressive et kick filtré',
-  },
-  {
-    id: 'build-up',
-    label: 'Build-Up',
-    shortCode: 'BLD',
-    defaultEnergy: 65,
-    description: 'Tension croissante, roulements de percussions et montées de filtres',
-  },
-  {
-    id: 'drop',
-    label: 'Drop',
-    shortCode: 'DRP',
-    defaultEnergy: 95,
-    description: 'Impact maximal, sub-bass explosive et groove complet',
-  },
-  {
-    id: 'main-groove',
-    label: 'Main Groove',
-    shortCode: 'GRV',
-    defaultEnergy: 85,
-    description: 'Régularité hypnotique, percussions tranchantes et motif principal',
-  },
-  {
-    id: 'breakdown',
-    label: 'Breakdown',
-    shortCode: 'BRK',
-    defaultEnergy: 35,
-    description: 'Retrait rythmique, focus mélodique/pads et respiration suspendue',
-  },
-  {
-    id: 'bridge',
-    label: 'Bridge',
-    shortCode: 'BRG',
-    defaultEnergy: 55,
-    description: 'Transition harmonique, contre-temps ou nouveau motif rythmique',
-  },
-  {
-    id: 'second-drop',
-    label: 'Second Drop',
-    shortCode: 'DR2',
-    defaultEnergy: 98,
-    description: 'Réinjection du beat avec intensité décuplée et couches saturées',
-  },
-  {
-    id: 'climax',
-    label: 'Climax',
-    shortCode: 'CLX',
-    defaultEnergy: 100,
-    description: 'Sommet d’énergie du morceau, synths débridés et saturation analogique',
-  },
-  {
-    id: 'outro',
-    label: 'Outro',
-    shortCode: 'OUT',
-    defaultEnergy: 30,
-    description: 'Déconstruction progressive, couches isolées et transition de fin',
-  },
-] as const
-
-export const DEFAULT_PHASE_SEQUENCE: readonly string[] = [
-  'Intro',
-  'Build-Up',
-  'Drop',
-  'Breakdown',
-  'Climax',
-  'Outro',
+  { id: 'intro', label: 'Intro', shortCode: 'INT', description: 'Ouverture qui présente les timbres ou le thème.' },
+  { id: 'verse', label: 'Verse', shortCode: 'VRS', description: 'Développement du thème avec un arrangement mesuré.' },
+  { id: 'pre-chorus', label: 'Pre-Chorus', shortCode: 'PRE', description: 'Transition qui prépare le retour du thème principal.' },
+  { id: 'chorus', label: 'Chorus', shortCode: 'CHR', description: 'Retour du thème principal, plus ample et mémorable.' },
+  { id: 'build-up', label: 'Build-Up', shortCode: 'BLD', description: 'Montée progressive de la tension et de la densité.' },
+  { id: 'drop', label: 'Drop', shortCode: 'DRP', description: 'Entrée marquée du rythme et du motif principal.' },
+  { id: 'main-groove', label: 'Main Groove', shortCode: 'GRV', description: 'Installation du motif rythmique central.' },
+  { id: 'breakdown', label: 'Breakdown', shortCode: 'BRK', description: 'Allègement de l’arrangement pour créer une respiration.' },
+  { id: 'bridge', label: 'Bridge', shortCode: 'BRG', description: 'Passage contrastant par son harmonie ou ses timbres.' },
+  { id: 'solo', label: 'Solo', shortCode: 'SOL', description: 'Un instrument passe au premier plan.' },
+  { id: 'interlude', label: 'Interlude', shortCode: 'ITL', description: 'Court passage reliant deux parties du morceau.' },
+  { id: 'second-drop', label: 'Second Drop', shortCode: 'DR2', description: 'Retour du motif principal avec une variation.' },
+  { id: 'climax', label: 'Climax', shortCode: 'CLX', description: 'Point culminant de l’intensité musicale.' },
+  { id: 'outro', label: 'Outro', shortCode: 'OUT', description: 'Conclusion progressive ou résolution du thème.' },
 ]
 
+export const DEFAULT_PHASE_SEQUENCE: readonly string[] = ['Intro', 'Verse', 'Chorus', 'Bridge', 'Chorus', 'Outro']
+
+// Optional examples, not a model-specific vocabulary or a list of control tokens.
 export const STABLE_AUDIO_TAGS: readonly AudioTag[] = [
-  // Stable Audio 3 documents un prompt libre structuré par type, genre,
-  // instruments, énergie et BPM. Aucun tag ci-dessous ne prétend verrouiller
-  // un réglage de mixage ou le tempo : ce sont des indications musicales.
-  { id: 'track-type-music', label: 'TrackType: Music', category: 'prompt', description: 'Marqueur de type explicitement montré dans le guide Stable Audio 3.' },
-  { id: 'vocal-type-instrumental', label: 'VocalType: Instrumental', category: 'prompt', description: 'Marqueur de type utile pour demander une piste instrumentale.' },
-  { id: 'genre-techno', label: 'Genre: Techno', category: 'prompt', description: 'Format Genre: documenté par SA3, avec une valeur présente dans les annotations du modèle Berlin.' },
-  { id: 'genre-minimal-techno', label: 'Genre: Minimal Techno', category: 'prompt', description: 'Même format documenté, appliqué au style minimal du modèle Berlin.' },
-  { id: 'instruments-drums', label: 'Instruments: Drums', category: 'prompt', description: 'Format Instruments: documenté par SA3 pour décrire la famille rythmique.' },
-  { id: 'instruments-bass', label: 'Instruments: Bass', category: 'prompt', description: 'Format Instruments: documenté par SA3 pour décrire la basse.' },
-
-  // --- STYLES & GENRES OBSERVÉS DANS LE MODÈLE / SA3 ---
-  { id: 'techno', label: 'Techno', category: 'style', description: 'Genre dominant des annotations du modèle Berlin.' },
-  { id: 'minimal-techno', label: 'Minimal Techno', category: 'style', description: 'Groove minimal avec variations fines et espace autour du kick.' },
-  { id: 'berlin-techno', label: 'Berlin Techno', category: 'style', description: 'Référence locale : quatre temps, hats discrets et basse lisible.' },
-  { id: 'deep-techno', label: 'Deep Techno', category: 'style', description: 'Techno profonde et retenue, présente dans le vocabulaire du modèle.' },
-  { id: 'industrial-techno', label: 'Industrial Techno', category: 'style', description: 'Texture métallique et énergie brute de la recette Berlin.' },
-  { id: 'acid-techno', label: 'Acid Techno', category: 'style', description: 'Techno centrée sur une ligne acid et un mouvement de filtre.' },
-  { id: 'dub-techno', label: 'Dub Techno', category: 'style', description: 'Accords dub, espace, delay et reverb : des éléments de prompt concrets.' },
-  { id: 'hard-techno', label: 'Hard Techno', category: 'style', description: 'Techno plus dense et plus énergique, observée dans le modèle.' },
-  { id: 'house', label: 'House', category: 'style', description: 'Genre présent dans les annotations du modèle Berlin.' },
-  { id: 'deep-house', label: 'Deep House', category: 'style', description: 'Genre présent dans les annotations du modèle Berlin.' },
-  { id: 'tech-house', label: 'Tech House', category: 'style', description: 'Genre présent dans les annotations du modèle Berlin.' },
-  { id: 'microhouse', label: 'Microhouse', category: 'style', description: 'Genre présent dans les annotations du modèle Berlin.' },
-  { id: 'melodic-house', label: 'Melodic House', category: 'style', description: 'Genre présent dans les annotations du modèle Berlin.' },
-  { id: 'progressive-house', label: 'Progressive House', category: 'style', description: 'Genre présent dans les annotations du modèle Berlin.' },
-  { id: 'neo-trance', label: 'Neo Trance', category: 'style', description: 'Genre présent dans les annotations du modèle Berlin.' },
-  { id: 'peak-time', label: 'Peak Time', category: 'style', description: 'Indication d’énergie présente dans les annotations du modèle Berlin.' },
-  { id: 'electro', label: 'Electro', category: 'style', description: 'Genre présent dans les annotations du modèle Berlin.' },
-  { id: 'idm', label: 'IDM', category: 'style', description: 'Genre présent dans les annotations du modèle Berlin ; à utiliser pour une rythmique plus complexe.' },
-  { id: 'ambient', label: 'Ambient', category: 'style', description: 'Genre présent dans les annotations du modèle Berlin ; apporte surtout de l’espace.' },
-  { id: 'experimental', label: 'Experimental', category: 'style', description: 'Indication présente dans les annotations du modèle Berlin.' },
-  { id: 'breakbeat', label: 'Breakbeat', category: 'style', description: 'Rythmique cassée ; à choisir volontairement car elle sort du quatre-au-sol.' },
-
-  // --- INSTRUMENTS & SYNTHÈSE ---
-  { id: 'bass', label: 'Bass', category: 'instruments', description: 'Élément central du vocabulaire musical et de la recette Berlin.' },
-  { id: 'sub-bass', label: 'Sub Bass', category: 'instruments', description: 'Fondation grave ; à garder lisible sous le kick.' },
-  { id: 'acid-303', label: 'Acid 303 Bassline', category: 'instruments', description: 'Ligne acid avec résonance et mouvement de filtre.' },
-  { id: '808-sub', label: '808 Sub', category: 'instruments', description: 'Sub grave court et identifiable, utile comme variation de basse.' },
-  { id: 'fm-bass', label: 'FM Bass', category: 'instruments', description: 'Basse harmonique de synthèse FM pour changer le timbre sans changer le rôle.' },
-  { id: 'reece-bass', label: 'Reese Bass', category: 'instruments', description: 'Basse désaccordée et large, à doser pour ne pas masquer le kick.' },
-  { id: 'analog-pad', label: 'Analog Pad', category: 'instruments', description: 'Nappe de synthétiseur analogique pour soutenir l’espace.' },
-  { id: 'chord-stab', label: 'Chord Stab', category: 'instruments', description: 'Accord court et percussif, facile à faire varier dans le groove.' },
-  { id: 'dub-chords', label: 'Dub Chords', category: 'instruments', description: 'Accords filtrés avec delay et reverb.' },
-  { id: 'atmospheric-drone', label: 'Atmospheric Drone', category: 'instruments', description: 'Texture continue d’arrière-plan, sans en faire une nouvelle mélodie.' },
-
-  // --- RYTHMIQUE & DRUMS ---
-  { id: 'four-to-the-floor', label: 'Four-to-the-floor Kick', category: 'rhythm', description: 'Kick sur chaque temps : invariant de la recette Berlin.' },
-  { id: 'punchy-kick', label: 'Punchy Kick', category: 'rhythm', description: 'Kick net et perceptible, sans promesse de modèle de machine précis.' },
-  { id: 'rumble-kick', label: 'Rumble Kick', category: 'rhythm', description: 'Kick techno avec une queue grave contrôlée.' },
-  { id: 'clean-kick', label: 'Clean Kick', category: 'rhythm', description: 'Kick lisible au-dessus de la basse.' },
-  { id: 'closed-hihats', label: 'Closed Hi-Hats', category: 'rhythm', description: 'Charlestons fermés et discrets.' },
-  { id: 'open-hat', label: 'Open Hi-Hat', category: 'rhythm', description: 'Charleston ouvert sur le contretemps.' },
-  { id: 'shaker', label: 'Shaker', category: 'rhythm', description: 'Petite percussion continue pour donner du mouvement.' },
-  { id: 'clap', label: 'Clap', category: 'rhythm', description: 'Accent de caisse claire simple et identifiable.' },
-  { id: 'rimshot', label: 'Rimshot', category: 'rhythm', description: 'Accent sec de percussion.' },
-  { id: 'metallic-percussion', label: 'Metallic Percussion', category: 'rhythm', description: 'Percussion métallique, cohérente avec la texture industrielle Berlin.' },
-  { id: 'tom-groove', label: 'Tom Groove', category: 'rhythm', description: 'Toms utilisés comme ponctuation grave du groove.' },
-  { id: 'rolling-groove', label: 'Rolling Groove', category: 'rhythm', description: 'Pulsation roulante pour maintenir le mouvement sans changer le BPM.' },
-  { id: 'syncopated-groove', label: 'Syncopated Groove', category: 'rhythm', description: 'Accents décalés, indication musicale et non réglage de tempo.' },
-  { id: 'dense-rhythm', label: 'Dense Rhythm', category: 'rhythm', description: 'Densité rythmique présente dans les annotations du modèle Berlin.' },
-  { id: 'sparse-rhythm', label: 'Sparse Rhythm', category: 'rhythm', description: 'Densité rythmique présente dans les annotations du modèle Berlin.' },
-  { id: 'moderate-density-rhythm', label: 'Moderate-density Rhythm', category: 'rhythm', description: 'Densité rythmique présente dans les annotations du modèle Berlin.' },
-
-  // --- AMBIANCE & MOOD ---
-  { id: 'hypnotic', label: 'Hypnotic', category: 'mood', description: 'Répétition stable avec petites variations de détail.' },
-  { id: 'dark', label: 'Dark', category: 'mood', description: 'Humeur sombre présente dans le vocabulaire local.' },
-  { id: 'atmospheric', label: 'Atmospheric', category: 'mood', description: 'Espace et texture autour du groove.' },
-  { id: 'driving', label: 'Driving', category: 'mood', description: 'Poussée en avant présente dans les annotations du modèle Berlin.' },
-  { id: 'deep', label: 'Deep', category: 'mood', description: 'Humeur profonde sans demander un changement de tempo.' },
-  { id: 'raw', label: 'Raw', category: 'mood', description: 'Texture brute et moins polie.' },
-  { id: 'warehouse', label: 'Warehouse', category: 'mood', description: 'Espace industriel de hangar.' },
-  { id: 'nocturnal', label: 'Nocturnal', category: 'mood', description: 'Humeur nocturne et urbaine.' },
-  { id: 'tension', label: 'Tension', category: 'mood', description: 'Énergie contenue pour faire évoluer le morceau progressivement.' },
-  { id: 'emotive', label: 'Emotive', category: 'mood', description: 'Indication d’expression présente dans les annotations du modèle Berlin.' },
-
-  // --- TECHNIQUES / EFFETS DE PROMPT (PAS LE DSP DE SORTIE) ---
-  { id: 'analog-warmth', label: 'Analog Warmth', category: 'production', description: 'Couleur analogique demandée dans le prompt.' },
-  { id: 'tape-saturation', label: 'Tape Saturation', category: 'production', description: 'Saturation douce de type bande demandée dans le prompt.' },
-  { id: 'sidechain-pumping', label: 'Sidechain Pumping', category: 'production', description: 'Pompage rythmique lié au kick demandé dans le prompt.' },
-  { id: 'spatial-reverb', label: 'Spatial Reverb', category: 'production', description: 'Reverb spatiale demandée dans le prompt.' },
-  { id: 'tape-delay', label: 'Tape Delay', category: 'production', description: 'Delay de type bande, cohérent avec le vocabulaire dub.' },
-  { id: 'resonant-filter', label: 'Resonant Filter Movement', category: 'production', description: 'Mouvement de filtre résonant demandé dans le prompt.' },
+  { id: 'track-type-music', label: 'TrackType: Music', category: 'prompt', description: 'Demander un morceau avec un arrangement complet.' },
+  { id: 'track-type-instrument', label: 'TrackType: Instrument', category: 'prompt', description: 'Demander une partie instrumentale isolée.' },
+  { id: 'track-type-sfx', label: 'TrackType: SFX', category: 'prompt', description: 'Demander un effet sonore ou un son ponctuel.' },
+  { id: 'format-duo', label: 'Format: Duo', category: 'prompt', description: 'Décrire ensuite les deux instruments du duo.' },
+  { id: 'genre-jazz', label: 'Genre: Jazz', category: 'prompt', description: 'Indication facultative du genre ; remplacer Jazz par le style souhaité.' },
+  { id: 'pop', label: 'Pop', category: 'style', description: 'Mélodie directe et motifs faciles à retenir.' },
+  { id: 'indie-pop', label: 'Indie Pop', category: 'style', description: 'Pop aux timbres personnels et aux arrangements légers.' },
+  { id: 'synthpop', label: 'Synthpop', category: 'style', description: 'Mélodies pop portées par des synthétiseurs.' },
+  { id: 'rock', label: 'Rock', category: 'style', description: 'Guitares, basse et batterie au premier plan.' },
+  { id: 'indie-rock', label: 'Indie Rock', category: 'style', description: 'Guitares expressives et arrangements souples.' },
+  { id: 'post-rock', label: 'Post-Rock', category: 'style', description: 'Développements instrumentaux et contrastes de densité.' },
+  { id: 'metal', label: 'Metal', category: 'style', description: 'Guitares saturées et rythmique puissante.' },
+  { id: 'punk', label: 'Punk', category: 'style', description: 'Attaque franche et arrangement dépouillé.' },
+  { id: 'jazz', label: 'Jazz', category: 'style', description: 'Interaction instrumentale et richesse harmonique.' },
+  { id: 'bebop', label: 'Bebop', category: 'style', description: 'Lignes mélodiques agiles et jeu syncopé.' },
+  { id: 'jazz-fusion', label: 'Jazz Fusion', category: 'style', description: 'Improvisation, instruments électriques et rythmes variés.' },
+  { id: 'blues', label: 'Blues', category: 'style', description: 'Phrasés expressifs et motifs cycliques.' },
+  { id: 'soul', label: 'Soul', category: 'style', description: 'Harmonie chaleureuse et groove expressif.' },
+  { id: 'funk', label: 'Funk', category: 'style', description: 'Basse syncopée et accents rythmiques précis.' },
+  { id: 'rnb', label: 'R&B', category: 'style', description: 'Groove souple et harmonies soignées.' },
+  { id: 'hip-hop', label: 'Hip-Hop', category: 'style', description: 'Batterie en boucle et basse structurante.' },
+  { id: 'lo-fi-hip-hop', label: 'Lo-Fi Hip-Hop', category: 'style', description: 'Battements détendus et texture douce.' },
+  { id: 'boom-bap', label: 'Boom Bap', category: 'style', description: 'Batterie découpée et caisse claire marquée.' },
+  { id: 'trap', label: 'Trap', category: 'style', description: 'Sub-basse et figures de charleston rapides.' },
+  { id: 'classical', label: 'Classical', category: 'style', description: 'Écriture instrumentale et développement des motifs.' },
+  { id: 'chamber-music', label: 'Chamber Music', category: 'style', description: 'Petit ensemble acoustique et dialogue entre instruments.' },
+  { id: 'orchestral', label: 'Orchestral', category: 'style', description: 'Cordes, bois, cuivres et percussions en ensemble.' },
+  { id: 'cinematic', label: 'Cinematic', category: 'style', description: 'Progression narrative et contrastes expressifs.' },
+  { id: 'folk', label: 'Folk', category: 'style', description: 'Instruments acoustiques et motifs simples.' },
+  { id: 'country', label: 'Country', category: 'style', description: 'Guitares et cordes pincées aux accents rythmiques nets.' },
+  { id: 'bluegrass', label: 'Bluegrass', category: 'style', description: 'Cordes acoustiques et jeu instrumental agile.' },
+  { id: 'bossa-nova', label: 'Bossa Nova', category: 'style', description: 'Guitare syncopée et percussion légère.' },
+  { id: 'samba', label: 'Samba', category: 'style', description: 'Rythme brésilien porté par les percussions.' },
+  { id: 'salsa', label: 'Salsa', category: 'style', description: 'Motifs entrelacés de piano, basse, cuivres et percussions.' },
+  { id: 'reggae', label: 'Reggae', category: 'style', description: 'Accents à contretemps et basse ample.' },
+  { id: 'dub', label: 'Dub', category: 'style', description: 'Basse centrale, espace et échos.' },
+  { id: 'afrobeat', label: 'Afrobeat', category: 'style', description: 'Motifs répétitifs, cuivres et percussions superposées.' },
+  { id: 'afrobeats', label: 'Afrobeats', category: 'style', description: 'Pop rythmique contemporaine et groove syncopé.' },
+  { id: 'flamenco', label: 'Flamenco', category: 'style', description: 'Guitare expressive et accents percussifs.' },
+  { id: 'indian-classical', label: 'Indian Classical', category: 'style', description: 'Développement mélodique modal et cycles rythmiques.' },
+  { id: 'gamelan', label: 'Gamelan', category: 'style', description: 'Motifs entrelacés de gongs et métallophones.' },
+  { id: 'ambient', label: 'Ambient', category: 'style', description: 'Textures étendues et évolution graduelle.' },
+  { id: 'downtempo', label: 'Downtempo', category: 'style', description: 'Pulsation retenue et espace entre les instruments.' },
+  { id: 'trip-hop', label: 'Trip-Hop', category: 'style', description: 'Rythme posé, basse et textures superposées.' },
+  { id: 'experimental', label: 'Experimental', category: 'style', description: 'Timbres ou formes musicales inhabituels.' },
+  { id: 'house', label: 'House', category: 'style', description: 'Pulsation régulière et groove dansant.' },
+  { id: 'deep-house', label: 'Deep House', category: 'style', description: 'Accords chaleureux et rythmique souple.' },
+  { id: 'tech-house', label: 'Tech House', category: 'style', description: 'Groove répétitif et percussions précises.' },
+  { id: 'progressive-house', label: 'Progressive House', category: 'style', description: 'Développement graduel de mélodies et de textures.' },
+  { id: 'techno', label: 'Techno', category: 'style', description: 'Motifs électroniques et pulsation régulière.' },
+  { id: 'minimal-techno', label: 'Minimal Techno', category: 'style', description: 'Peu d’éléments et variations fines.' },
+  { id: 'industrial-techno', label: 'Industrial Techno', category: 'style', description: 'Timbres métalliques et percussion brute.' },
+  { id: 'acid-techno', label: 'Acid Techno', category: 'style', description: 'Ligne de basse résonante et mouvement de filtre.' },
+  { id: 'dub-techno', label: 'Dub Techno', category: 'style', description: 'Accords filtrés, échos et pulsation régulière.' },
+  { id: 'trance', label: 'Trance', category: 'style', description: 'Motifs mélodiques cycliques et montées progressives.' },
+  { id: 'disco', label: 'Disco', category: 'style', description: 'Basse dansante, cordes et guitare rythmique.' },
+  { id: 'electro', label: 'Electro', category: 'style', description: 'Rythmes électroniques syncopés et timbres synthétiques.' },
+  { id: 'synthwave', label: 'Synthwave', category: 'style', description: 'Synthétiseurs expressifs et batterie électronique.' },
+  { id: 'drum-and-bass', label: 'Drum & Bass', category: 'style', description: 'Batterie syncopée et basse dynamique.' },
+  { id: 'jungle', label: 'Jungle', category: 'style', description: 'Breaks de batterie découpés et lignes de basse.' },
+  { id: 'breakbeat', label: 'Breakbeat', category: 'style', description: 'Motifs de batterie aux accents décalés.' },
+  { id: 'idm', label: 'IDM', category: 'style', description: 'Rythmes détaillés et exploration des timbres.' },
+  { id: 'piano', label: 'Piano', category: 'instruments', description: 'Piano acoustique, attaque nette et résonance naturelle.' },
+  { id: 'electric-piano', label: 'Electric Piano', category: 'instruments', description: 'Clavier électrique au timbre arrondi.' },
+  { id: 'organ', label: 'Organ', category: 'instruments', description: 'Notes soutenues et richesse harmonique.' },
+  { id: 'acoustic-guitar', label: 'Acoustic Guitar', category: 'instruments', description: 'Cordes pincées ou accords acoustiques.' },
+  { id: 'electric-guitar', label: 'Electric Guitar', category: 'instruments', description: 'Guitare amplifiée ; préciser le jeu et la saturation.' },
+  { id: 'bass', label: 'Bass', category: 'instruments', description: 'Instrument de basse qui soutient l’harmonie.' },
+  { id: 'upright-bass', label: 'Upright Bass', category: 'instruments', description: 'Contrebasse acoustique au timbre boisé.' },
+  { id: 'sub-bass', label: 'Sub Bass', category: 'instruments', description: 'Fondation synthétique dans les graves.' },
+  { id: 'violin', label: 'Violin', category: 'instruments', description: 'Cordes frottées au registre aigu.' },
+  { id: 'cello', label: 'Cello', category: 'instruments', description: 'Cordes frottées au registre grave et médium.' },
+  { id: 'string-ensemble', label: 'String Ensemble', category: 'instruments', description: 'Ensemble de cordes avec des voix complémentaires.' },
+  { id: 'harp', label: 'Harp', category: 'instruments', description: 'Cordes pincées claires et résonantes.' },
+  { id: 'flute', label: 'Flute', category: 'instruments', description: 'Instrument à vent au timbre aérien.' },
+  { id: 'clarinet', label: 'Clarinet', category: 'instruments', description: 'Bois au timbre souple et au registre étendu.' },
+  { id: 'saxophone', label: 'Saxophone', category: 'instruments', description: 'Souffle expressif et phrasé souple.' },
+  { id: 'trumpet', label: 'Trumpet', category: 'instruments', description: 'Cuivre clair aux attaques précises.' },
+  { id: 'brass-section', label: 'Brass Section', category: 'instruments', description: 'Ensemble de cuivres en accords ou en réponses.' },
+  { id: 'vibraphone', label: 'Vibraphone', category: 'instruments', description: 'Lames métalliques au son soutenu.' },
+  { id: 'marimba', label: 'Marimba', category: 'instruments', description: 'Lames de bois aux attaques rondes.' },
+  { id: 'sitar', label: 'Sitar', category: 'instruments', description: 'Cordes pincées avec résonances sympathiques.' },
+  { id: 'oud', label: 'Oud', category: 'instruments', description: 'Luth au timbre boisé et aux inflexions mélodiques.' },
+  { id: 'koto', label: 'Koto', category: 'instruments', description: 'Cithare japonaise aux cordes pincées.' },
+  { id: 'erhu', label: 'Erhu', category: 'instruments', description: 'Cordes frottées au phrasé expressif.' },
+  { id: 'kora', label: 'Kora', category: 'instruments', description: 'Harpe-luth aux motifs entrelacés.' },
+  { id: 'accordion', label: 'Accordion', category: 'instruments', description: 'Soufflet et anches aux notes soutenues.' },
+  { id: 'banjo', label: 'Banjo', category: 'instruments', description: 'Cordes pincées aux attaques brillantes.' },
+  { id: 'analog-pad', label: 'Analog Pad', category: 'instruments', description: 'Nappe synthétique soutenue.' },
+  { id: 'synth-lead', label: 'Synth Lead', category: 'instruments', description: 'Synthétiseur au premier plan mélodique.' },
+  { id: 'arpeggiated-synth', label: 'Arpeggiated Synth', category: 'instruments', description: 'Synthétiseur jouant les notes d’un accord en séquence.' },
+  { id: 'fm-bass', label: 'FM Bass', category: 'instruments', description: 'Basse synthétique aux harmoniques marquées.' },
+  { id: 'acid-303', label: 'Acid 303 Bassline', category: 'instruments', description: 'Basse synthétique au filtre résonant.' },
+  { id: '808-sub', label: '808 Sub', category: 'instruments', description: 'Basse électronique à longue décroissance.' },
+  { id: 'chord-stab', label: 'Chord Stab', category: 'instruments', description: 'Accord bref et percussif.' },
+  { id: 'wordless-choir', label: 'Wordless Choir', category: 'instruments', description: 'Texture chorale sans paroles intelligibles.' },
+  { id: 'drums', label: 'Drums', category: 'rhythm', description: 'Batterie acoustique ou électronique à préciser.' },
+  { id: 'brushed-drums', label: 'Brushed Drums', category: 'rhythm', description: 'Batterie jouée aux balais.' },
+  { id: 'hand-percussion', label: 'Hand Percussion', category: 'rhythm', description: 'Percussions jouées à la main.' },
+  { id: 'tabla', label: 'Tabla', category: 'rhythm', description: 'Paire de percussions aux frappes articulées.' },
+  { id: 'congas', label: 'Congas', category: 'rhythm', description: 'Tambours joués à la main aux sons ouverts ou étouffés.' },
+  { id: 'four-to-the-floor', label: 'Four-to-the-floor Kick', category: 'rhythm', description: 'Grosse caisse sur chaque temps.' },
+  { id: 'punchy-kick', label: 'Punchy Kick', category: 'rhythm', description: 'Grosse caisse à l’attaque franche.' },
+  { id: 'closed-hihats', label: 'Closed Hi-Hats', category: 'rhythm', description: 'Charlestons fermés et brefs.' },
+  { id: 'open-hat', label: 'Open Hi-Hat', category: 'rhythm', description: 'Charleston ouvert et résonant.' },
+  { id: 'shaker', label: 'Shaker', category: 'rhythm', description: 'Percussion légère et continue.' },
+  { id: 'clap', label: 'Clap', category: 'rhythm', description: 'Accent bref de claquement de mains.' },
+  { id: 'rimshot', label: 'Rimshot', category: 'rhythm', description: 'Frappe sèche sur le bord de la caisse claire.' },
+  { id: 'metallic-percussion', label: 'Metallic Percussion', category: 'rhythm', description: 'Percussions au timbre métallique.' },
+  { id: 'swing', label: 'Swing', category: 'rhythm', description: 'Subdivision rythmique inégale et souple.' },
+  { id: 'shuffle', label: 'Shuffle', category: 'rhythm', description: 'Balancement ternaire du rythme.' },
+  { id: 'waltz-rhythm', label: 'Waltz Rhythm', category: 'rhythm', description: 'Mouvement de valse en trois temps.' },
+  { id: 'polyrhythm', label: 'Polyrhythm', category: 'rhythm', description: 'Superposition de cycles rythmiques différents.' },
+  { id: 'syncopated-groove', label: 'Syncopated Groove', category: 'rhythm', description: 'Accents décalés par rapport aux temps forts.' },
+  { id: 'sparse-rhythm', label: 'Sparse Rhythm', category: 'rhythm', description: 'Motif rythmique laissant beaucoup d’espace.' },
+  { id: 'dense-rhythm', label: 'Dense Rhythm', category: 'rhythm', description: 'Motif rythmique riche en événements.' },
+  { id: 'fingerpicking', label: 'Fingerpicking', category: 'rhythm', description: 'Cordes pincées aux doigts en motifs successifs.' },
+  { id: 'legato', label: 'Legato', category: 'rhythm', description: 'Notes liées, sans coupure marquée.' },
+  { id: 'staccato', label: 'Staccato', category: 'rhythm', description: 'Notes courtes et détachées.' },
+  { id: 'calm', label: 'Calm', category: 'mood', description: 'Ambiance apaisée et retenue.' },
+  { id: 'joyful', label: 'Joyful', category: 'mood', description: 'Ambiance lumineuse et joyeuse.' },
+  { id: 'melancholic', label: 'Melancholic', category: 'mood', description: 'Expression douce et mélancolique.' },
+  { id: 'intimate', label: 'Intimate', category: 'mood', description: 'Sensation de proximité et de retenue.' },
+  { id: 'nostalgic', label: 'Nostalgic', category: 'mood', description: 'Couleur évocatrice et nostalgique.' },
+  { id: 'playful', label: 'Playful', category: 'mood', description: 'Caractère léger et joueur.' },
+  { id: 'dreamy', label: 'Dreamy', category: 'mood', description: 'Ambiance flottante et rêveuse.' },
+  { id: 'euphoric', label: 'Euphoric', category: 'mood', description: 'Caractère expansif et énergique.' },
+  { id: 'dark', label: 'Dark', category: 'mood', description: 'Couleur sombre et contenue.' },
+  { id: 'tension', label: 'Tension', category: 'mood', description: 'Impression d’attente et d’instabilité.' },
+  { id: 'hypnotic', label: 'Hypnotic', category: 'mood', description: 'Répétitions et variations progressives.' },
+  { id: 'atmospheric', label: 'Atmospheric', category: 'mood', description: 'Ambiance portée par les timbres et l’espace.' },
+  { id: 'driving', label: 'Driving', category: 'mood', description: 'Sensation de mouvement soutenu.' },
+  { id: 'emotive', label: 'Emotive', category: 'mood', description: 'Phrasé expressif et contrastes émotionnels.' },
+  { id: 'instrumental', label: 'Instrumental', category: 'production', description: 'Musique instrumentale, sans voix principale.' },
+  { id: 'live-recording', label: 'Live Recording', category: 'production', description: 'Caractère d’une prise de son en direct.' },
+  { id: 'close-mic-recording', label: 'Close-Mic Recording', category: 'production', description: 'Proximité des instruments et détails des attaques.' },
+  { id: 'dry-room', label: 'Dry Room', category: 'production', description: 'Peu de réverbération et sources bien définies.' },
+  { id: 'concert-hall', label: 'Concert Hall', category: 'production', description: 'Réverbération ample de salle de concert.' },
+  { id: 'spatial-reverb', label: 'Spatial Reverb', category: 'production', description: 'Réverbération qui donne de la profondeur.' },
+  { id: 'tape-delay', label: 'Tape Delay', category: 'production', description: 'Échos au timbre progressivement assombri.' },
+  { id: 'analog-warmth', label: 'Analog Warmth', category: 'production', description: 'Timbres arrondis et harmoniques douces.' },
+  { id: 'tape-saturation', label: 'Tape Saturation', category: 'production', description: 'Saturation douce évoquant une bande magnétique.' },
+  { id: 'distortion', label: 'Distortion', category: 'production', description: 'Saturation audible et harmoniques plus denses.' },
+  { id: 'sidechain-pumping', label: 'Sidechain Pumping', category: 'production', description: 'Variation de niveau rythmique évoquant le pompage.' },
+  { id: 'resonant-filter', label: 'Resonant Filter Movement', category: 'production', description: 'Évolution du timbre par un filtre résonant.' },
+  { id: 'lo-fi-texture', label: 'Lo-Fi Texture', category: 'production', description: 'Texture volontairement patinée.' },
+  { id: 'clean-mix', label: 'Clean Mix', category: 'production', description: 'Instruments distincts et équilibre lisible.' },
+  { id: 'rain', label: 'Rain', category: 'sound', description: 'Pluie ; préciser la surface, l’intensité et la distance.' },
+  { id: 'ocean-waves', label: 'Ocean Waves', category: 'sound', description: 'Vagues ; préciser la taille et le point d’écoute.' },
+  { id: 'forest-birds', label: 'Forest Birds', category: 'sound', description: 'Oiseaux et ambiance de forêt.' },
+  { id: 'footsteps', label: 'Footsteps', category: 'sound', description: 'Pas ; préciser les chaussures et le sol.' },
+  { id: 'door-slam', label: 'Door Slam', category: 'sound', description: 'Porte qui claque ; préciser le matériau et la pièce.' },
+  { id: 'metal-impact', label: 'Metal Impact', category: 'sound', description: 'Impact métallique ; préciser la masse et la résonance.' },
+  { id: 'whoosh', label: 'Whoosh', category: 'sound', description: 'Souffle bref associé à un mouvement.' },
+  { id: 'riser', label: 'Riser', category: 'sound', description: 'Effet dont l’intensité ou la hauteur augmente.' },
+  { id: 'synth-one-shot', label: 'Synth One-Shot', category: 'sound', description: 'Son synthétique bref et isolé.' },
 ]
-
-export const formatPhasesPrompt = (phases: readonly string[]): string => {
-  if (!phases || phases.length === 0) return ''
-  return `arrangement: ${phases.join(' -> ')}`
-}
-
-export const getTagCategory = (tagText: string): TagCategory | 'custom' => {
-  const normalized = tagText.trim().toLowerCase()
-  if (!normalized) return 'custom'
-
-  const foundTag = STABLE_AUDIO_TAGS.find(
-    (t) => t.label.toLowerCase() === normalized || t.id.toLowerCase() === normalized,
-  )
-  if (foundTag) return foundTag.category
-
-  const foundPhase = TRACK_PHASES.find(
-    (p) => p.label.toLowerCase() === normalized || p.shortCode.toLowerCase() === normalized || p.id.toLowerCase() === normalized,
-  )
-  if (foundPhase) return 'phases'
-
-  if (/(tracktype|vocaltype|genre:|instruments:|format:)/i.test(normalized)) return 'prompt'
-
-  // Keyword heuristic matching for user free-form tags
-  if (/(techno|house|ambient|electro|dnb|drum & bass|jungle|breakbeat|idm|synthwave|darkwave|cyberpunk|downtempo|trance|disco|dub|rock|metal|garage)/i.test(normalized)) return 'style'
-  if (/(bass|synth|lead|pad|string|pluck|drone|fm|303|808|modular|vocal|guitar|piano|organ|horn|flute|brass)/i.test(normalized)) return 'instruments'
-  if (/(kick|hat|snare|clap|percussion|drum|groove|beat|shaker|tom|polyrhythm|syncopated|rimshot|roll)/i.test(normalized)) return 'rhythm'
-  if (/(dark|hypnotic|driving|submerged|raw|warehouse|nocturnal|ethereal|euphoric|mood|vibe|chill|deep|aggressive|tension)/i.test(normalized)) return 'mood'
-  if (/(saturation|tape|analog|reverb|delay|mix|sub|compression|stereo|sidechain|clean|mastering|spatial|warmth|filtering)/i.test(normalized)) return 'production'
-
-  return 'custom'
-}

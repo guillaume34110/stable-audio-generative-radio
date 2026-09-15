@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { GenerativeRadio, type RadioGenerationRequest } from './GenerativeRadio'
+import { buildStableAudioPrompt } from './stable-audio-prompt'
 import {
   createStableAudioRadioGeneration,
   listStableAudioRadioSfts,
@@ -152,7 +153,7 @@ export const GenerativeRadioPage = ({ onBack }: GenerativeRadioPageProps): React
     const job = await createStableAudioRadioGeneration({
       sft_id: request.sftId,
       model_variant: request.modelVariant,
-      prompt: request.keywords,
+      prompt: buildStableAudioPrompt(request.keywords, request.phases),
       bpm: request.bpm,
       drift: request.drift,
       energy: request.energy,

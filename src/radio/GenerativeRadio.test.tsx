@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { GenerativeRadio, RADIO_KEYWORDS_STORAGE_KEY, RADIO_FIXED_TAGS_STORAGE_KEY, RADIO_SKIN_STORAGE_KEY } from './GenerativeRadio'
+import { GenerativeRadio, RADIO_KEYWORDS_STORAGE_KEY, RADIO_NEGATIVE_PROMPT_STORAGE_KEY, RADIO_FIXED_TAGS_STORAGE_KEY, RADIO_SKIN_STORAGE_KEY } from './GenerativeRadio'
 
 const startRadio = () => fireEvent.click(screen.getByRole('button', { name: 'Démarrer la radio' }))
 
@@ -16,11 +16,52 @@ describe('GenerativeRadio', () => {
 
     expect(screen.getByTestId('generative-radio')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'radio.studio' })).toBeInTheDocument()
-    expect(screen.getAllByRole('slider')).toHaveLength(19)
+    expect(screen.getAllByRole('slider')).toHaveLength(17)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Variante du modèle' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: /Ta direction sonore/ })).toHaveValue('minimal, minimal techno')
+    expect(screen.getByRole('textbox', { name: /Ta direction sonore/ })).toHaveValue('Instrumental music.')
     expect(screen.getByRole('slider', { name: /^Influence$/ })).toHaveValue('100')
+  })
+
+  it('downloads the active WAV without interrupting playback or starting another generation', async () => {
+    const downloads: { href: string; filename: string }[] = []
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push({ href: this.href, filename: this.download })
+    })
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause')
+    const onGenerate = vi.fn()
+      .mockResolvedValueOnce({ audioUrl: 'blob:first-wav', id: 'first', title: 'Piano / nocturne', durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:second-wav', id: 'second', title: 'Next passage', durationSeconds: 240 })
+      .mockImplementation(() => new Promise(() => {}))
+    const selectedModel = {
+      id: 'model', filename: 'radio.safetensors', size_bytes: 1024,
+      created_at: '2026-09-15', format: 'safetensors' as const, base_model: 'stable-audio-3-medium',
+    }
+    try {
+      render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+      const download = screen.getByRole('button', { name: 'Télécharger le morceau en lecture' })
+      expect(download).toBeDisabled()
+      expect(download.textContent).toBe('')
+      expect(within(screen.getByTestId('next-radio-track')).queryByRole('button', { name: /Télécharger/ })).not.toBeInTheDocument()
+      startRadio()
+      await waitFor(() => expect(screen.getByTestId('next-radio-track')).toHaveTextContent('READY'))
+      pause.mockClear()
+      fireEvent.click(download)
+      expect(downloads).toEqual([{ href: 'blob:first-wav', filename: 'Piano - nocturne.wav' }])
+      expect(pause).not.toHaveBeenCalled()
+      expect(onGenerate).toHaveBeenCalledTimes(2)
+      expect(document.querySelector('audio')).toHaveAttribute('src', 'blob:first-wav')
+      expect(document.querySelector('a[download]')).not.toBeInTheDocument()
+
+      fireEvent.ended(document.querySelector('audio')!)
+      await waitFor(() => expect(document.querySelector('audio')).toHaveAttribute('src', 'blob:second-wav'))
+      fireEvent.click(download)
+      expect(downloads[1]).toEqual({ href: 'blob:second-wav', filename: 'Next passage.wav' })
+      expect(onGenerate).toHaveBeenCalledTimes(3)
+    } finally {
+      click.mockRestore()
+      pause.mockRestore()
+    }
   })
 
   it('cycles the physical skin LED and remembers the selected finish', () => {
@@ -78,11 +119,8 @@ describe('GenerativeRadio', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('pins a sound and reorders phases without dragging', () => {
+  it('reorders phases without dragging', () => {
     render(<GenerativeRadio />)
-    fireEvent.click(screen.getByRole('button', { name: 'minimal techno' }))
-    fireEvent.click(screen.getByRole('button', { name: 'PIN' }))
-    expect(window.localStorage.getItem(RADIO_FIXED_TAGS_STORAGE_KEY)).toContain('minimal techno')
     fireEvent.change(screen.getByRole('combobox', { name: 'Ajouter une phase' }), { target: { value: 'Intro' } })
     fireEvent.change(screen.getByRole('combobox', { name: 'Ajouter une phase' }), { target: { value: 'Drop' } })
     fireEvent.click(screen.getByRole('button', { name: 'Déplacer la phase à gauche' }))
@@ -144,99 +182,58 @@ describe('GenerativeRadio', () => {
     expect(screen.getByRole('heading', { name: 'dusty drums Drift' })).toBeInTheDocument()
   })
 
-  it('keeps an unlimited user tag pool and samples only user tags per generation', async () => {
-    const userTags = [
-      'minimal techno',
-      'dry kick',
-      'metallic hats',
-      'sub bass',
-      'warehouse reverb',
-      'tape saturation',
-      'rolling groove',
-      'night drive',
-      'neon tension',
-      'slow filter motion',
-    ]
+  it('keeps the entire free-text prompt unchanged across successive generations', async () => {
+    const direction = 'TrackType: Music\nGenre: Jazz\nA piano trio, upright bass, brushed drums.\nQuiet at first, then expressive; piano, piano. Preserve the space between notes.'
     const onGenerate = vi.fn()
-      .mockResolvedValueOnce({ audioUrl: 'blob:pool-first', id: '1'.repeat(16), durationSeconds: 240 })
-      .mockResolvedValueOnce({ audioUrl: 'blob:pool-second', id: '2'.repeat(16), durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:full-first', id: '1'.repeat(16), durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:full-second', id: '2'.repeat(16), durationSeconds: 240 })
+      .mockResolvedValueOnce({ audioUrl: 'blob:full-third', id: '3'.repeat(16), durationSeconds: 240 })
     const selectedModel = {
-      id: '3'.repeat(32),
-      filename: 'radio.safetensors',
-      size_bytes: 2048,
-      created_at: '2026-09-10T00:00:00',
-      format: 'safetensors' as const,
+      id: '3'.repeat(32), filename: 'radio.safetensors', size_bytes: 2048,
+      created_at: '2026-09-10T00:00:00', format: 'safetensors' as const,
       base_model: 'stable-audio-3-medium-mlx',
     }
     render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
-
-    fireEvent.change(screen.getByRole('textbox', { name: /Ta direction sonore/ }), { target: { value: userTags.join(', ') } })
-    expect(screen.getByRole('textbox', { name: /Ta direction sonore/ })).toHaveValue(userTags.join(', '))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ta direction sonore' }), { target: { value: direction } })
     startRadio()
-
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByTestId('next-radio-track')).toHaveTextContent('READY'))
+    fireEvent.ended(document.querySelector('audio')!)
+    await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
 
-    const pool = new Set(userTags)
-    const requests = onGenerate.mock.calls.map(([request]) => request)
-    for (const request of requests) {
-      const selectedTags = request.keywords.split(',').map((tag: string) => tag.trim()).filter(Boolean)
-      expect(selectedTags.length).toBeGreaterThanOrEqual(2)
-      expect(selectedTags.length).toBeLessThan(userTags.length)
-      expect(selectedTags.every((tag: string) => pool.has(tag))).toBe(true)
+    for (const [request] of onGenerate.mock.calls) {
+      expect(request.keywords).toBe(direction)
+      expect(request.bpm).toBe(124)
+      expect(request.drift).toBe(26)
+      expect(request).not.toHaveProperty('fixedTags')
     }
-    expect(requests[0]!.bpm).toBe(124)
-    expect(requests[1]!.bpm).toBe(requests[0]!.bpm)
-    expect(requests[0]!.drift).toBe(26)
-    expect(requests[1]!.drift).toBe(requests[0]!.drift)
-    expect(requests[1]!.keywords).not.toBe(requests[0]!.keywords)
-    expect(screen.getByTestId('current-radio-track')).toHaveTextContent(requests[0]!.keywords)
+    expect(new Set(onGenerate.mock.calls.map(([request]) => request.seed)).size).toBe(3)
+    expect(screen.getByRole('textbox', { name: 'Ta direction sonore' })).toHaveValue(direction)
   })
 
-  it('keeps fixed tags as a base and samples optional tags from the user field', async () => {
-    const fixedTags = ['minimal techno', 'warehouse anchor']
-    const userTags = [
-      'minimal techno',
-      'dry kick',
-      'metallic hats',
-      'sub bass',
-      'warehouse reverb',
-      'tape saturation',
-      'rolling groove',
-      'night drive',
-      'neon tension',
-      'slow filter motion',
-    ]
-    window.localStorage.setItem(RADIO_FIXED_TAGS_STORAGE_KEY, JSON.stringify(fixedTags))
-    const onGenerate = vi.fn()
-      .mockResolvedValueOnce({ audioUrl: 'blob:fixed-first', id: 'f'.repeat(16), durationSeconds: 240 })
-      .mockResolvedValueOnce({ audioUrl: 'blob:fixed-second', id: 'g'.repeat(16), durationSeconds: 240 })
+  it('migrates legacy pinned phrases into the visible prompt once', async () => {
+    const direction = 'Piano, softly played.\nA bassoon answers the piano.'
+    window.localStorage.setItem(RADIO_KEYWORDS_STORAGE_KEY, direction)
+    window.localStorage.setItem(RADIO_FIXED_TAGS_STORAGE_KEY, JSON.stringify(['piano', 'Bass', 'Warm (tape)', 'Warm (tape)']))
+    const expected = `${direction}\nBass\nWarm (tape)`
+    const onGenerate = vi.fn().mockResolvedValue({ audioUrl: 'blob:full-prompt', id: 'migration', durationSeconds: 240 })
     const selectedModel = {
-      id: 'h'.repeat(32),
-      filename: 'radio.safetensors',
-      size_bytes: 2048,
-      created_at: '2026-09-10T00:00:00',
-      format: 'safetensors' as const,
+      id: 'm'.repeat(32), filename: 'radio.safetensors', size_bytes: 2048,
+      created_at: '2026-09-10T00:00:00', format: 'safetensors' as const,
       base_model: 'stable-audio-3-medium-mlx',
     }
-    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
-
-    fireEvent.change(screen.getByRole('textbox', { name: /Ta direction sonore/ }), { target: { value: userTags.join(', ') } })
+    const { unmount } = render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
+    expect(screen.getByRole('textbox', { name: 'Ta direction sonore' })).toHaveValue(expected)
+    expect(window.localStorage.getItem(RADIO_KEYWORDS_STORAGE_KEY)).toBe(expected)
+    expect(window.localStorage.getItem(RADIO_FIXED_TAGS_STORAGE_KEY)).toBeNull()
     startRadio()
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
+    for (const [request] of onGenerate.mock.calls) expect(request.keywords).toBe(expected)
 
-    const userPool = new Set(userTags)
-    const fixedSet = new Set(fixedTags)
-    const requests = onGenerate.mock.calls.map(([request]) => request as { keywords: string; fixedTags?: string[] })
-    for (const request of requests) {
-      const generatedTags = request.keywords.split(',').map((tag: string) => tag.trim()).filter(Boolean)
-      const optionalTags = generatedTags.filter((tag: string) => !fixedSet.has(tag))
-      expect(request.fixedTags).toEqual(fixedTags)
-      expect(generatedTags.slice(0, fixedTags.length)).toEqual(fixedTags)
-      expect(optionalTags.length).toBeGreaterThan(0)
-      expect(optionalTags.every((tag: string) => userPool.has(tag))).toBe(true)
-      expect(new Set(generatedTags).size).toBe(generatedTags.length)
-    }
-    expect(requests[0]!.keywords).not.toBe(requests[1]!.keywords)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ta direction sonore' }), { target: { value: direction } })
+    unmount()
+    render(<GenerativeRadio />)
+    expect(screen.getByRole('textbox', { name: 'Ta direction sonore' })).toHaveValue(direction)
   })
 
   it('exposes the real-time pro monitoring controls without changing the generated recipe', () => {
@@ -344,7 +341,7 @@ describe('GenerativeRadio', () => {
     expect(continuation.durationSeconds).toBeLessThanOrEqual(360)
     expect(screen.getByRole('status', { name: 'État de la radio' })).toHaveTextContent('Morceau indépendant prêt')
     expect(screen.getByTestId('current-radio-track')).toHaveTextContent('01 / NOW')
-    for (const label of ['TONALITÉ', 'BPM CIBLE', 'MODE', 'ÉVOLUTION', 'ÉNERGIE', 'TEXTURE', 'MODÈLE', 'SEED', 'TAGS', 'STRUCT.']) {
+    for (const label of ['TONALITÉ', 'BPM CIBLE', 'MODE', 'ÉVOLUTION', 'ÉNERGIE', 'TEXTURE', 'MODÈLE', 'SEED', 'PROMPT', 'STRUCT.']) {
       expect(screen.getByTestId('current-radio-track')).toHaveTextContent(label)
     }
     expect(screen.getByTestId('current-radio-track')).toHaveTextContent('CONTINU')
@@ -352,7 +349,7 @@ describe('GenerativeRadio', () => {
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('02 / NEXT')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('user tag alpha Relay')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('READY')
-    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('TAGS')
+    expect(screen.getByTestId('next-radio-track')).toHaveTextContent('PROMPT')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent(continuation.keywords)
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('DURÉE')
     expect(screen.getByTestId('next-radio-track')).toHaveTextContent('MODE')
@@ -421,7 +418,7 @@ describe('GenerativeRadio', () => {
     fireEvent.change(keywords, { target: { value: '' } })
     fireEvent.submit(screen.getByTestId('radio-form'))
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Ajoute au moins un mot-clé')
+    expect(screen.getByRole('alert')).toHaveTextContent('Décris le son souhaité')
     expect(keywords).toHaveAttribute('aria-invalid', 'true')
     expect(keywords).toHaveFocus()
   })
@@ -544,7 +541,7 @@ describe('GenerativeRadio', () => {
 
     resolveBufferedNext(bufferedNext)
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(3))
-    expect(screen.getByRole('heading', { name: 'minimal Relay' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Instrumental music Relay' })).toBeInTheDocument()
     expect(onGenerate.mock.calls[2]![0]).toEqual(expect.objectContaining({
       continuationFromId: '9'.repeat(16),
     }))
@@ -570,7 +567,7 @@ describe('GenerativeRadio', () => {
     await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2))
 
     const next = screen.getByTestId('next-radio-track')
-    for (const label of ['TONALITÉ', 'BPM CIBLE', 'MODE', 'ÉVOLUTION', 'ÉNERGIE', 'TEXTURE', 'MODÈLE', 'SEED', 'TAGS', 'STRUCT.']) {
+    for (const label of ['TONALITÉ', 'BPM CIBLE', 'MODE', 'ÉVOLUTION', 'ÉNERGIE', 'TEXTURE', 'MODÈLE', 'SEED', 'PROMPT', 'STRUCT.']) {
       expect(next).toHaveTextContent(label)
     }
     expect(next).toHaveTextContent('CALCUL 4%')
@@ -645,58 +642,45 @@ describe('GenerativeRadio', () => {
 
   })
 
-  it('edits and removes excluded sounds on the facade', () => {
+  it('edits both LCDs as continuous text without tag controls or counters', () => {
     render(<GenerativeRadio />)
-
-    const negTextarea = screen.getByRole('textbox', { name: /Exclusions sonores/ })
-
-    // Modifying negative prompt displays negative chips underneath
-    fireEvent.change(negTextarea, { target: { value: 'vocals, static noise, glitch' } })
-
-    fireEvent.click(screen.getByRole('button', { name: 'static noise' }))
-    const exclude = document.querySelector('.machine-exclude') as HTMLElement
-    fireEvent.click(within(exclude).getByRole('button', { name: 'REMOVE' }))
-    expect(negTextarea).toHaveValue('vocals, glitch')
-
+    const direction = 'Soft piano, with space between notes.\nA distant cello answers.'
+    const excluded = 'Speech, clipped transients.\nSudden cuts, sudden cuts.'
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ta direction sonore' }), { target: { value: direction } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Exclusions sonores' }), { target: { value: excluded } })
+    expect(window.localStorage.getItem(RADIO_KEYWORDS_STORAGE_KEY)).toBe(direction)
+    expect(window.localStorage.getItem(RADIO_NEGATIVE_PROMPT_STORAGE_KEY)).toBe(excluded)
+    const directionPanel = document.querySelector('.machine-direction') as HTMLElement
+    const excludePanel = document.querySelector('.machine-exclude') as HTMLElement
+    expect(within(directionPanel).getAllByRole('button')).toHaveLength(1)
+    expect(within(excludePanel).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(directionPanel).queryByRole('slider')).not.toBeInTheDocument()
+    expect(within(excludePanel).queryByRole('slider')).not.toBeInTheDocument()
+    expect(excludePanel).not.toHaveTextContent('TAGS')
+    expect(document.querySelector('.machine-chip-line')).not.toBeInTheDocument()
   })
 
-  it('removes the selected keyword using the physical REMOVE key', () => {
+  it('preserves deliberately empty directions and exclusions across reloads', () => {
+    const { unmount } = render(<GenerativeRadio />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ta direction sonore' }), { target: { value: '' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Exclusions sonores' }), { target: { value: '' } })
+    unmount()
     render(<GenerativeRadio />)
-
-    const textarea = screen.getByRole('textbox', { name: /Ta direction sonore/ })
-    expect(textarea).toHaveValue('minimal, minimal techno')
-
-    fireEvent.click(screen.getByRole('button', { name: 'minimal' }))
-    const removeBtn = within(document.querySelector('.machine-direction') as HTMLElement).getByRole('button', { name: 'REMOVE' })
-    fireEvent.click(removeBtn)
-
-    expect(textarea).toHaveValue('minimal techno')
+    expect(screen.getByRole('textbox', { name: 'Ta direction sonore' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: 'Exclusions sonores' })).toHaveValue('')
   })
 
-  it('opens tag catalogue modal, filters tags and allows selecting/toggling tags', () => {
+  it('adds a catalog suggestion without rewriting the existing prose', () => {
     render(<GenerativeRadio />)
-
-    const openBtn = screen.getByRole('button', { name: /Explorer les sons/i })
-    fireEvent.click(openBtn)
-
+    const direction = 'A delicate duet, with quiet pauses.\nLet each note ring.'
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ta direction sonore' }), { target: { value: direction } })
+    fireEvent.click(screen.getByRole('button', { name: 'Explorer les sons' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Explorer les sons' })).toBeInTheDocument()
-
-    // Filter by search
-    const searchInput = screen.getByPlaceholderText(/Filtrer les tags/i)
-    fireEvent.change(searchInput, { target: { value: 'Acid' } })
-
-    // Find and toggle tag
-    const acidTag = screen.getByRole('button', { name: /Acid Techno/i })
-    expect(acidTag).toBeInTheDocument()
-    fireEvent.click(acidTag)
-
-    // The keyword input now contains Acid Techno
-    const textarea = screen.getByRole('textbox', { name: /Ta direction sonore/ })
-    expect((textarea as HTMLTextAreaElement).value).toContain('Acid Techno')
-
-    // Close modal
-    fireEvent.click(screen.getByRole('button', { name: 'Valider & fermer' }))
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Rechercher un son' }), { target: { value: 'piano' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter Piano à la direction' }))
+    expect(screen.getByRole('textbox', { name: 'Ta direction sonore' })).toHaveValue(`${direction}\nPiano`)
+    expect(screen.queryByRole('button', { name: /Épingler|Détacher/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Fermer' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
@@ -721,50 +705,19 @@ describe('GenerativeRadio', () => {
     expect(screen.queryByRole('button', { name: 'Sélectionner Intro, position 1' })).not.toBeInTheDocument()
     fireEvent.change(phases, { target: { value: 'Outro' } })
 
-    // Generate and check prompt includes arrangement
+    // Keep the editable prompt separate from the arrangement until the API boundary.
     startRadio()
 
     await waitFor(() => expect(onGenerate).toHaveBeenCalled())
     const sentRequest = onGenerate.mock.calls[0]![0] as { keywords: string; phases: string[] }
-    expect(sentRequest.keywords).toContain('arrangement:')
-    expect(sentRequest.phases).toBeDefined()
-    expect(sentRequest.phases).toContain('Drop')
+    expect(sentRequest.keywords).toBe('Instrumental music.')
+    expect(sentRequest.phases).toEqual(['Drop', 'Outro'])
   })
 
-  it('pins a tag on the facade, persists it and includes it in every request', async () => {
-    const onGenerate = vi.fn().mockResolvedValue({ audioUrl: 'blob:audio', id: 'gen-fixed', durationSeconds: 240 })
-    const selectedModel = {
-      id: 'f'.repeat(32),
-      filename: 'fixed.safetensors',
-      size_bytes: 1024,
-      created_at: '2026-09-10T00:00:00',
-      format: 'safetensors' as const,
-      base_model: 'stable-audio-3-medium-mlx',
-    }
-
-    const { unmount } = render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
-
-    fireEvent.change(screen.getByRole('textbox', { name: 'Ta direction sonore' }), { target: { value: 'analog modular' } })
-    fireEvent.click(screen.getByRole('button', { name: 'analog modular' }))
-    fireEvent.click(screen.getByRole('button', { name: 'PIN' }))
-
-    // Verify localStorage persistence
-    expect(window.localStorage.getItem(RADIO_FIXED_TAGS_STORAGE_KEY)).toContain('analog modular')
-
-    // Generate and verify fixed tag is always in request
-    startRadio()
-    await waitFor(() => expect(onGenerate).toHaveBeenCalled())
-    const sent = onGenerate.mock.calls[0]![0] as { keywords: string; fixedTags?: string[] }
-    expect(sent.keywords).toContain('analog modular')
-    expect(sent.fixedTags).toContain('analog modular')
-
-    // Test unmount and restore from localStorage
-    unmount()
-    render(<GenerativeRadio onGenerate={onGenerate} selectedModel={selectedModel} />)
-    fireEvent.click(screen.getByRole('button', { name: '◆ analog modular' }))
-    expect(screen.getByRole('button', { name: 'PIN' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(screen.getByRole('button', { name: 'PIN' }))
-    expect(window.localStorage.getItem(RADIO_FIXED_TAGS_STORAGE_KEY)).toBe('[]')
-
+  it('keeps saved prose when legacy pin storage is malformed', () => {
+    window.localStorage.setItem(RADIO_KEYWORDS_STORAGE_KEY, 'A solo koto, played gently.')
+    window.localStorage.setItem(RADIO_FIXED_TAGS_STORAGE_KEY, '{broken')
+    render(<GenerativeRadio />)
+    expect(screen.getByRole('textbox', { name: 'Ta direction sonore' })).toHaveValue('A solo koto, played gently.')
   })
 })

@@ -1,8 +1,8 @@
 # Stable Audio Generative Radio
 
-A browser-first generative radio player for Stable Audio 3 Medium models.
+A browser-first generative radio player for Stable Audio 3 through a local inference engine.
 
-The page is intentionally small: import a local `.safetensors` adapter, enter an unlimited pool of user tags, and let the radio evolve its tempo, energy, texture, and next-track preparation procedurally. Each generation samples a different pseudo-random subset from that pool; the generation prompt contains no invented style tags. Playback, queueing, monitoring DSP, noise filtering, and intelligent limiting run in the browser.
+Import a local `.safetensors` adapter, describe the sound in the Direction LCD, and let the radio prepare the next track. Each generation retains the complete description, including punctuation and line breaks. Seeds and non-tempo controls can evolve; the selected BPM remains the target. Playback, queueing, monitoring DSP, noise filtering, and limiting run in the browser.
 
 ![radio.studio desktop workstation with the Polar skin, Direction and Exclude LCDs, physical controls, equalizer, and track displays](docs/screenshots/radio-studio.png)
 
@@ -26,6 +26,20 @@ The browser client expects a local Stable Audio 3 API exposing:
 - `GET /api/stable-audio/radio/generations/:id/audio`
 
 To use another local API origin, copy `.env.example` to `.env` and set `VITE_RADIO_API_URL`. When the local-engine pairing token exists, requests go directly to the paired loopback engine and include the token; generated audio and model files remain local.
+
+## Writing a direction
+
+Follow the [official Stable Audio 3 prompt guide](https://kb.stability.ai/knowledge-base/stable-audio-3-prompt-guide): describe the style, instruments, rhythm, mood and recording character in plain English. For example:
+
+> An intimate jazz trio with piano, upright bass and brushed drums. A gentle swing with short improvised phrases and a dry room sound.
+
+The sound browser offers optional vocabulary across acoustic, orchestral, electronic and other styles. It does not depend on a particular fine-tune. Documented fields such as `TrackType: Music`, `TrackType: Instrument`, `TrackType: SFX`, `Format: Duo` and `Genre: Jazz` can also be written directly. They are optional; the client does not insert or rewrite them automatically.
+
+Direction and Exclude are continuous text fields, with no tag splitting, pinning or random selection. Exclude is sent separately as `negative_prompt`, and the tempo control is sent as `bpm`. Selected structure phases append a natural-language arrangement sentence, preserving order and repetitions; they are descriptive guidance, not exact timed section commands. Existing pinned phrases are migrated into the visible Direction text once.
+
+Edits wait for the next available generation slot. Playing audio, an in-flight request and the buffered next track remain intact.
+
+The local engine determines which model variants can actually run; a shared prompt format does not add new model loaders.
 
 ## Scope
 

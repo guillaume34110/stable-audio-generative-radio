@@ -67,7 +67,7 @@ export const LOCAL_RADIO_PAIRING_ERROR = 'Le moteur local doit être appairé po
 export const LOCAL_RADIO_NETWORK_ERROR = 'Connexion au moteur Stable Audio bloquée. Autorise l’accès au réseau local pour ce site, puis réessaie.'
 
 const normalizeModelCopy = (copy: string): string => copy
-  .replace(/\bBerlin SFT\b/g, 'modèle Berlin')
+  .replace(/\b(?:Berlin SFT|modèle Berlin)\b/gi, 'modèle')
   .replace(/\bSFT\b/g, 'modèle')
 
 const stableAudioRadioResponse = async (path: string, init?: RequestInit): Promise<Response> => {
